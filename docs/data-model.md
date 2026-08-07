@@ -63,6 +63,19 @@ erDiagram
 
 상태 변경은 `qa_comments.status` 갱신과 `qa_events` 추가를 하나의 transaction으로 처리한다. 삭제 대신 archive를 우선하며, audit event는 append-only로 관리한다.
 
+구현 마이그레이션은 [`supabase/migrations/20260807000100_init_qa_hub.sql`](../supabase/migrations/20260807000100_init_qa_hub.sql)에 있다. `qa_events`와 `audit_events`는 브라우저가 직접 수정하거나 삭제할 수 없고, `transition_qa_comment()` DB 함수가 유효한 상태 전환과 이벤트 기록을 함께 처리한다.
+
+## 협업 성과 기록
+
+화면 QA의 결과를 회고 가능한 데이터로 남기기 위해 다음 필드를 권위 데이터로 보관한다.
+
+- 동일 화면 재현: immutable deployment URL, deployment ID, Git SHA, route/query, viewport, scroll, 요소 식별자
+- 피드백 맥락: 주석 vector, 스크린샷 object key, Figma 기준, 유형·우선순위
+- 협업 과정: 작성·배정·상태 전환·재오픈 시각과 담당자
+- 운영 감사: allowlist 초대/철회, 권한 및 배포 관련 audit event
+
+`qa_comment_metrics` view로 유형·우선순위·주차별 QA 수와 해결 시간을 집계한다. 세부 활용 원칙은 [`docs/collaboration-records.md`](./collaboration-records.md)를 따른다.
+
 ## geometry JSON 예
 
 ```json

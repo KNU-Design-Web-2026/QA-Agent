@@ -20,7 +20,7 @@ MVP에서 반드시 분리해야 할 경계는 다음과 같다.
 - 인증: 초대 전용 OIDC/email magic link. 가입 API는 초대 레코드를 반드시 소비한다.
 - 파일: S3 호환 object storage, private bucket, 짧은 수명의 signed URL
 - 작업 큐: managed queue + 별도 Playwright worker
-- 배포: Hub/worker는 KNUD 사이트와 별도 Vercel project
+- 배포: Hub는 Vercel, Playwright capture worker는 Render Background Worker
 - 관측: 구조화 로그와 audit event. 세션 토큰, screenshot signed URL, Vercel token은 로그에서 제거한다.
 
 MVP는 단일 프로젝트지만 스키마에는 `organization_id`, `project_id` 경계를 둔다. 나중에 프로젝트를 늘릴 때 권한 모델과 데이터 이관을 다시 만들지 않기 위함이다.
