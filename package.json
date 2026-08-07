@@ -1,0 +1,11 @@
+{
+  "name": "knud-design-qa-hub",
+  "private": true,
+  "packageManager": "pnpm@9.15.3",
+  "scripts": {
+    "dev": "pnpm --filter @knud/qa-hub dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}
