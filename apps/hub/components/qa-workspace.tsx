@@ -18,7 +18,6 @@ import {
   SquaresFour,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -106,28 +105,9 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
 
   async function saveComment() {
     if (!draft || !message.trim()) return;
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) {
-      setSaveError("Supabase 연결 설정을 찾을 수 없습니다.");
-      return;
-    }
     setIsSaving(true);
     setSaveError(null);
     try {
-      const [{ data: auth }, { data: project, error: projectError }] = await Promise.all([
-        supabase.auth.getUser(),
-        supabase.from("projects").select("id").eq("slug", projectSlug).single(),
-      ]);
-      if (!auth.user) throw new Error("로그인 세션이 만료되었습니다.");
-      if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
-      const { data: deployment, error: deploymentError } = await supabase
-        .from("deployments")
-        .select("id")
-        .eq("project_id", project.id)
-        .eq("immutable_url", actualUrl)
-        .single();
-      if (deploymentError || !deployment) throw new Error("현재 배포본이 아직 QA 프로젝트에 등록되지 않았습니다.");
-
       const normalizedAnchor = {
         space: "viewport-normalized",
         x: draft.start.x / currentViewport.width,
@@ -135,38 +115,9 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
         width: Math.abs(draft.end.x - draft.start.x) / currentViewport.width,
         height: Math.abs(draft.end.y - draft.start.y) / currentViewport.height,
       };
-      const { data: comment, error: commentError } = await supabase
-        .from("qa_comments")
-        .insert({
-          project_id: project.id,
-          deployment_id: deployment.id,
-          author_id: auth.user.id,
-          body: message.trim(),
-          type: "interaction",
-          priority: "high",
-          pathname: route,
-          query_string: "",
-          viewport_width: currentViewport.width,
-          viewport_height: currentViewport.height,
-          device_scale_factor: window.devicePixelRatio,
-          zoom,
-          scroll_x: 0,
-          scroll_y: 0,
-          element_qa_id: "navigation-toggle",
-          selector_hint_json: {},
-          normalized_anchor_json: normalizedAnchor,
-        })
-        .select("id")
-        .single();
-      if (commentError || !comment) throw new Error("코멘트를 저장하지 못했습니다.");
-
-      const { error: annotationError } = await supabase.from("annotations").insert({
-        qa_comment_id: comment.id,
-        kind: draft.kind === "area" ? "rect" : "pin",
-        geometry_json: normalizedAnchor,
-        style_json: { color: "yellow" },
-      });
-      if (annotationError) throw new Error("코멘트 위치를 저장하지 못했습니다.");
+      const response = await fetch("/api/comments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectSlug, deploymentUrl: actualUrl, body: message.trim(), pathname: route, viewportWidth: currentViewport.width, viewportHeight: currentViewport.height, deviceScaleFactor: window.devicePixelRatio, zoom, kind: draft.kind, anchor: normalizedAnchor }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "코멘트를 저장하지 못했습니다.");
       setMessage("");
       setCommentOpen(false);
       setTool("browse");
