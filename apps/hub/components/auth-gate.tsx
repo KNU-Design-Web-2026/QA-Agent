@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Check, EnvelopeSimple, Eye, EyeSlash, LockSimple, WarningCircle } from "@phosphor-icons/react";
 
-type AccessSession = { email: string; displayName: string };
+type AccessSession = { email: string; displayName: string; role: "admin" | "designer" | "developer" | "viewer" };
+const AccessSessionContext = createContext<AccessSession | null>(null);
+
+export function useQaAccessSession() {
+  return useContext(AccessSessionContext);
+}
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AccessSession | null>();
@@ -29,8 +34,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } finally { setIsSubmitting(false); }
   }
 
-  if (user === undefined) return <main className="auth-loading">KNUD Design QA Hub 연결 중…</main>;
-  if (user) return <>{children}</>;
+  if (user === undefined) return <main className="auth-loading"><span className="auth-loading__spinner" aria-hidden="true" /><span>KNUD Design QA Hub 연결 중…</span></main>;
+  if (user) return <AccessSessionContext.Provider value={user}>{children}</AccessSessionContext.Provider>;
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const canSubmit = emailValid && password.length >= 4 && !isSubmitting;
