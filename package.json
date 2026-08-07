@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.3",
   "scripts": {
+    "start": "pnpm --filter @knud/qa-hub start",
     "dev": "pnpm --filter @knud/qa-hub dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
