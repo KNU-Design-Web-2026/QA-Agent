@@ -17,7 +17,7 @@ import {
   RectangleDashed,
   SquaresFour,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -56,7 +56,7 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
   const [status, setStatus] = useState("열림");
   const canvasRef = useRef<HTMLDivElement>(null);
   const currentViewport = viewports[selectedViewport] ?? { width: 1020, height: 1370 };
-  const zoom = 0.68;
+  const zoom = Math.min(0.68, 920 / currentViewport.width);
   const actualUrl = deploymentUrl ?? "http://localhost:3000";
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
 
@@ -97,7 +97,6 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
   };
 
   const scaleLabel = `${Math.round(zoom * 100)}%`;
-  const activeFrames = useMemo(() => viewports.filter((_, index) => index !== selectedViewport), [selectedViewport]);
 
   return (
     <main className="qa-app">
@@ -141,12 +140,12 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
 
         <section className="qa-canvas">
           <div className="frame-workspace">
-            <article className="live-stage">
+            <article className="live-stage" style={{ width: Math.round(currentViewport.width * zoom) }}>
               <header className="frame-caption"><span><code>{currentViewport.width} × {currentViewport.height}</code> 태블릿 · 주 검수 화면</span><span><code>{scaleLabel}</code> · scrollY 0</span></header>
               <div className="live-frame">
                 <div className="browser-bar"><button aria-label="뒤로"><CaretLeft /></button><button aria-label="새로고침"><span className="reload">↻</span></button><div className="address"><i /> <code>knud-2026.vercel.app</code><strong>{route}</strong></div><span className="live-badge"><i />실제 배포본</span></div>
                 {isCommentMode && <div className="mode-banner"><span><MapPin /> 코멘트 모드 — 사이트 위를 클릭하거나 영역을 드래그하세요</span><button onClick={() => { setTool("browse"); setCommentOpen(false); setDraft(null); }}><kbd>Esc</kbd> 종료</button></div>}
-                <div className="viewport-clip" style={{ height: isCommentMode ? 674 : 704 }}>
+                <div className="viewport-clip" style={{ width: Math.round(currentViewport.width * zoom), height: isCommentMode ? 674 : 704 }}>
                   <div className="scaled-viewport" style={{ width: currentViewport.width, height: currentViewport.height, transform: `scale(${zoom})` }}>
                     <iframe title="KNUD production deployment" src={`${actualUrl}${route}`} sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts" />
                   </div>
@@ -159,7 +158,6 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
               </div>
               <p className="frame-hint">실제 사이트를 그대로 클릭·hover하며 확인하세요. <strong>코멘트를 남기려면</strong> <kbd>C</kbd> 또는 아래 주석 버튼</p>
             </article>
-            <div className="viewport-strip"><header><strong>다른 뷰포트</strong><span>동일 배포본</span></header>{activeFrames.slice(0, 3).map((item) => <button key={item.width} className="thumbnail" onClick={() => setSelectedViewport(viewports.findIndex((view) => view.width === item.width))}><span><code>{item.width}</code>{item.width === 600 && <b>● 1건</b>}</span><div><iframe title={`${item.width}px deployment preview`} src={`${actualUrl}${route}`} /></div></button>)}</div>
           </div>
           <nav className="mode-switch"><button className={tool === "browse" ? "active" : ""} onClick={() => setTool("browse")}><Cursor />탐색</button><button className={isCommentMode ? "active" : ""} onClick={() => setTool("pin")}><MapPin />코멘트 <kbd>C</kbd></button><button className={tool === "compare" ? "active" : ""} onClick={() => setTool("compare")}><SquaresFour />비교</button></nav>
         </section>
