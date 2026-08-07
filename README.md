@@ -21,6 +21,7 @@ pnpm dev
 - [기술 설계](docs/technical-design.md)
 - [데이터 모델](docs/data-model.md)
 - [MVP 구현 계획](docs/mvp-implementation-plan.md)
+- [MVP 사용 검증 계획](docs/mvp-validation-plan.md)
 
 ## 배포 구성
 

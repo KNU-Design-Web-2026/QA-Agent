@@ -1,5 +1,7 @@
 # MVP 구현 계획
 
+자동 스크린샷 캡처와 Render Worker는 초기 검증 범위에서 제외한다. 먼저 배포본 재현·코멘트·상태 이력이 실제 협업에 유효한지 확인한 뒤, 필요성이 데이터로 확인될 때만 도입한다. 구체적인 성공 기준과 2주 사용 시나리오는 [`mvp-validation-plan.md`](./mvp-validation-plan.md)를 따른다.
+
 ## 성공 기준
 
 디자이너가 Production deployment를 선택해 5개 고정 viewport에서 사이트를 탐색하고, 핀/영역/화살표 코멘트를 남긴 뒤 개발자가 공유 링크 하나로 동일 SHA·경로·viewport·scroll·요소를 복원할 수 있다.
