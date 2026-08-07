@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 
 export const QA_ACCESS_COOKIE = "knud_qa_access";
 
-export type QaAccessSession = { userId: string; email: string; displayName: string };
+export type QaAccessRole = "admin" | "designer" | "developer" | "viewer";
+export type QaAccessSession = { userId: string; email: string; displayName: string; role: QaAccessRole };
 
 function required(name: "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY" | "QA_SHARED_ACCESS_PASSWORD") {
   const value = process.env[name];
@@ -28,8 +29,8 @@ export function readAccessToken(token: string | undefined): QaAccessSession | nu
   if (receivedSignature.length !== expectedSignature.length || !timingSafeEqual(Buffer.from(receivedSignature), Buffer.from(expectedSignature))) return null;
   try {
     const value = JSON.parse(Buffer.from(payload, "base64url").toString()) as QaAccessSession & { exp: number };
-    if (!value.userId || !value.email || !value.displayName || value.exp < Date.now()) return null;
-    return { userId: value.userId, email: value.email, displayName: value.displayName };
+    if (!value.userId || !value.email || !value.displayName || !value.role || value.exp < Date.now()) return null;
+    return { userId: value.userId, email: value.email, displayName: value.displayName, role: value.role };
   } catch { return null; }
 }
 
@@ -47,7 +48,7 @@ export async function establishQaAccess(emailInput: string): Promise<QaAccessSes
   const email = emailInput.trim().toLowerCase();
   const supabase = createAdminClient();
   const { data: allowlist, error: allowlistError } = await supabase
-    .from("access_allowlist").select("email, display_name").eq("email", email).is("revoked_at", null).maybeSingle();
+    .from("access_allowlist").select("email, display_name, role").eq("email", email).is("revoked_at", null).maybeSingle();
   if (allowlistError || !allowlist) throw new Error("초대되지 않은 이메일입니다.");
 
   const { data: users, error: usersError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
@@ -58,5 +59,5 @@ export async function establishQaAccess(emailInput: string): Promise<QaAccessSes
     if (error || !data.user) throw new Error("사용자 계정을 준비하지 못했습니다.");
     user = data.user;
   }
-  return { userId: user.id, email, displayName: allowlist.display_name || email.split("@")[0] };
+  return { userId: user.id, email, displayName: allowlist.display_name || email.split("@")[0], role: allowlist.role };
 }

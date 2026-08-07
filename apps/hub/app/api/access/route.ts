@@ -22,3 +22,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "접근을 확인하지 못했습니다." }, { status: 400 });
   }
 }
+
+export function DELETE() {
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(QA_ACCESS_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0 });
+  return response;
+}
