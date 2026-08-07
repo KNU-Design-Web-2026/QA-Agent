@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: knud-qa-capture-worker
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: packages/qa-capture-worker/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CAPTURE_POLL_INTERVAL_MS
+        value: "3000"
+      - key: CAPTURE_MAX_ATTEMPTS
+        value: "3"
