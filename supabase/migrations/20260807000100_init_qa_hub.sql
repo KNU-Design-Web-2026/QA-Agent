@@ -43,6 +43,7 @@ create table public.access_allowlist (
   invited_at timestamptz not null default now(),
   activated_at timestamptz,
   revoked_at timestamptz,
+  display_name text,
   note text
 );
 
@@ -207,7 +208,7 @@ begin
   where email = lower(new.email) and revoked_at is null;
   if not found then raise exception 'This email address is not approved for KNUD Design QA Hub'; end if;
   insert into public.profiles (id, email, display_name, avatar_url)
-  values (new.id, lower(new.email), coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)), new.raw_user_meta_data ->> 'avatar_url');
+  values (new.id, lower(new.email), coalesce(allowlist_row.display_name, new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)), new.raw_user_meta_data ->> 'avatar_url');
   insert into public.memberships (organization_id, user_id, role)
   values (allowlist_row.organization_id, new.id, allowlist_row.role)
   on conflict (organization_id, user_id) do update set role = excluded.role;
@@ -263,8 +264,9 @@ create or replace function public.transition_qa_comment(comment_id uuid, next_st
 returns public.qa_comments language plpgsql security definer set search_path = '' as $$
 declare current_comment public.qa_comments%rowtype; org_id uuid; action_kind text;
 begin
-  select c.*, p.organization_id into current_comment, org_id from public.qa_comments c join public.projects p on p.id = c.project_id where c.id = comment_id for update;
+  select c.* into current_comment from public.qa_comments c where c.id = comment_id for update;
   if not found then raise exception 'QA comment not found'; end if;
+  select organization_id into org_id from public.projects where id = current_comment.project_id;
   if not public.has_project_role(current_comment.project_id, array['admin','designer','developer']::public.member_role[]) then raise exception 'Not allowed to transition this QA comment'; end if;
   if not ((current_comment.status = 'open' and next_status = 'in_progress') or (current_comment.status = 'in_progress' and next_status in ('review_requested', 'open')) or (current_comment.status = 'review_requested' and next_status in ('done', 'in_progress')) or (current_comment.status = 'done' and next_status = 'open')) then
     raise exception 'Invalid QA status transition: % -> %', current_comment.status, next_status;

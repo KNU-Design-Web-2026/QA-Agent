@@ -18,6 +18,7 @@ import {
   SquaresFour,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -52,12 +53,17 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
   const [draft, setDraft] = useState<Draft | null>(null);
   const [commentOpen, setCommentOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [comparePosition, setComparePosition] = useState(62);
   const [status, setStatus] = useState("열림");
   const canvasRef = useRef<HTMLDivElement>(null);
   const currentViewport = viewports[selectedViewport] ?? { width: 1020, height: 1370 };
   const zoom = Math.min(0.68, 920 / currentViewport.width);
-  const actualUrl = deploymentUrl ?? "http://localhost:3000";
+  // Vercel aliases can be entered with or without a trailing slash. Keep the
+  // stored deployment key canonical so it remains stable between sessions.
+  const actualUrl = (deploymentUrl ?? "http://localhost:3000").replace(/\/$/, "");
+  const projectSlug = process.env.NEXT_PUBLIC_QA_PROJECT_SLUG ?? "knud-exhibition";
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
 
   useEffect(() => {
@@ -97,6 +103,80 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
   };
 
   const scaleLabel = `${Math.round(zoom * 100)}%`;
+
+  async function saveComment() {
+    if (!draft || !message.trim()) return;
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setSaveError("Supabase 연결 설정을 찾을 수 없습니다.");
+      return;
+    }
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const [{ data: auth }, { data: project, error: projectError }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from("projects").select("id").eq("slug", projectSlug).single(),
+      ]);
+      if (!auth.user) throw new Error("로그인 세션이 만료되었습니다.");
+      if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
+      const { data: deployment, error: deploymentError } = await supabase
+        .from("deployments")
+        .select("id")
+        .eq("project_id", project.id)
+        .eq("immutable_url", actualUrl)
+        .single();
+      if (deploymentError || !deployment) throw new Error("현재 배포본이 아직 QA 프로젝트에 등록되지 않았습니다.");
+
+      const normalizedAnchor = {
+        space: "viewport-normalized",
+        x: draft.start.x / currentViewport.width,
+        y: draft.start.y / currentViewport.height,
+        width: Math.abs(draft.end.x - draft.start.x) / currentViewport.width,
+        height: Math.abs(draft.end.y - draft.start.y) / currentViewport.height,
+      };
+      const { data: comment, error: commentError } = await supabase
+        .from("qa_comments")
+        .insert({
+          project_id: project.id,
+          deployment_id: deployment.id,
+          author_id: auth.user.id,
+          body: message.trim(),
+          type: "interaction",
+          priority: "high",
+          pathname: route,
+          query_string: "",
+          viewport_width: currentViewport.width,
+          viewport_height: currentViewport.height,
+          device_scale_factor: window.devicePixelRatio,
+          zoom,
+          scroll_x: 0,
+          scroll_y: 0,
+          element_qa_id: "navigation-toggle",
+          selector_hint_json: {},
+          normalized_anchor_json: normalizedAnchor,
+        })
+        .select("id")
+        .single();
+      if (commentError || !comment) throw new Error("코멘트를 저장하지 못했습니다.");
+
+      const { error: annotationError } = await supabase.from("annotations").insert({
+        qa_comment_id: comment.id,
+        kind: draft.kind === "area" ? "rect" : "pin",
+        geometry_json: normalizedAnchor,
+        style_json: { color: "yellow" },
+      });
+      if (annotationError) throw new Error("코멘트 위치를 저장하지 못했습니다.");
+      setMessage("");
+      setCommentOpen(false);
+      setTool("browse");
+      setDraft(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "코멘트를 저장하지 못했습니다.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <main className="qa-app">
@@ -144,7 +224,7 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
               <header className="frame-caption"><span><code>{currentViewport.width} × {currentViewport.height}</code> 태블릿 · 주 검수 화면</span><span><code>{scaleLabel}</code> · scrollY 0</span></header>
               <div className="live-frame">
                 <div className="browser-bar"><button aria-label="뒤로"><CaretLeft /></button><button aria-label="새로고침"><span className="reload">↻</span></button><div className="address"><i /> <code>knud-2026.vercel.app</code><strong>{route}</strong></div><span className="live-badge"><i />실제 배포본</span></div>
-                {isCommentMode && <div className="mode-banner"><span><MapPin /> 코멘트 모드 — 사이트 위를 클릭하거나 영역을 드래그하세요</span><button onClick={() => { setTool("browse"); setCommentOpen(false); setDraft(null); }}><kbd>Esc</kbd> 종료</button></div>}
+                {isCommentMode && <div className="mode-banner"><span><MapPin /> 코멘트 모드 — 사이트 위를 클릭하거나 영역을 드래그하세요</span><button onClick={() => { setTool("browse"); setCommentOpen(false); setDraft(null); setSaveError(null); }}><kbd>Esc</kbd> 종료</button></div>}
                 <div className="viewport-clip" style={{ width: Math.round(currentViewport.width * zoom), height: isCommentMode ? 674 : 704 }}>
                   <div className="scaled-viewport" style={{ width: currentViewport.width, height: currentViewport.height, transform: `scale(${zoom})` }}>
                     <iframe title="KNUD production deployment" src={`${actualUrl}${route}`} sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts" />
@@ -153,7 +233,7 @@ export function QaWorkspace({ deploymentUrl }: { deploymentUrl: string | null })
                   {isCommentMode && <div className="comment-mask" onPointerDown={selectTarget} onPointerMove={updateTarget} onPointerUp={finishTarget} />}
                   {draft && <Selection draft={draft} />}
                   {!isCommentMode && <><div className="hover-target"><span>hero-cta-primary · 124×40</span></div><PinBadge number={1} tone="yellow" className="frame-pin" /></>}
-                  {commentOpen && draft && <CommentComposer message={message} setMessage={setMessage} onCancel={() => { setCommentOpen(false); setDraft(null); setTool("browse"); }} onSave={() => { setCommentOpen(false); setTool("browse"); setDraft(null); }} />}
+                  {commentOpen && draft && <CommentComposer message={message} setMessage={setMessage} saveError={saveError} isSaving={isSaving} onCancel={() => { setCommentOpen(false); setDraft(null); setTool("browse"); setSaveError(null); }} onSave={saveComment} />}
                 </div>
               </div>
               <p className="frame-hint">실제 사이트를 그대로 클릭·hover하며 확인하세요. <strong>코멘트를 남기려면</strong> <kbd>C</kbd> 또는 아래 주석 버튼</p>
@@ -182,8 +262,8 @@ function Selection({ draft }: { draft: Draft }) {
   return <div className="selection" style={{ left, top, width, height }}><i /><i /><i /><i /><span>navigation-toggle · {Math.round(width)} × {Math.round(height)}</span></div>;
 }
 
-function CommentComposer({ message, setMessage, onCancel, onSave }: { message: string; setMessage: (value: string) => void; onCancel: () => void; onSave: () => void }) {
-  return <form className="comment-composer" onSubmit={(event) => { event.preventDefault(); onSave(); }}><header><span className="avatar yellow">JK</span><strong>여기에 코멘트 남기기</strong><code>navigation-toggle</code></header><textarea autoFocus value={message} onChange={(event) => setMessage(event.target.value)} placeholder="이 요소에 대한 피드백을 입력하세요." /><div className="composer-actions"><button type="button" className="select-pill"><i />High<CaretDown /></button><button type="button" className="select-pill">인터랙션<CaretDown /></button><button type="button" className="assignee">@</button><span /><button type="button" className="cancel" onClick={onCancel}>취소</button><button className="save">저장 <code>⌘↵</code></button></div><footer>1020 × 1370 · / · scrollY 0 · 9e74d1b · 캡처 자동 저장</footer></form>;
+function CommentComposer({ message, setMessage, saveError, isSaving, onCancel, onSave }: { message: string; setMessage: (value: string) => void; saveError: string | null; isSaving: boolean; onCancel: () => void; onSave: () => Promise<void> }) {
+  return <form className="comment-composer" onSubmit={(event) => { event.preventDefault(); void onSave(); }}><header><span className="avatar yellow">JK</span><strong>여기에 코멘트 남기기</strong><code>navigation-toggle</code></header><textarea autoFocus value={message} onChange={(event) => setMessage(event.target.value)} placeholder="이 요소에 대한 피드백을 입력하세요." required /><div className="composer-actions"><button type="button" className="select-pill"><i />High<CaretDown /></button><button type="button" className="select-pill">인터랙션<CaretDown /></button><button type="button" className="assignee">@</button><span /><button type="button" className="cancel" onClick={onCancel}>취소</button><button className="save" disabled={isSaving}>{isSaving ? "저장 중…" : "저장"} <code>⌘↵</code></button></div>{saveError && <p className="composer-error">{saveError}</p>}<footer>뷰포트 · 경로 · 좌표 · 배포본 자동 저장</footer></form>;
 }
 
 function CompareOverlay({ position, onChange }: { position: number; onChange: (value: number) => void }) { return <div className="compare-overlay"><div className="reference-layer" style={{ width: `${position}%` }}><span>FIGMA 기준</span></div><div className="live-layer"><span>LIVE 구현</span></div><input aria-label="비교 분할 위치" type="range" min="40" max="90" value={position} onChange={(event) => onChange(Number(event.target.value))} /></div>; }
