@@ -45,4 +45,21 @@ Focused comparison covered the toolbar tool states, browser bar, selected frame 
 - [x] Implement browse, comment, and compare states.
 - [x] Verify primary interactions and console errors in a browser.
 
-final result: passed
+## 2026-08-08 incremental toolbar QA
+
+- Source visual truth: `/var/folders/9y/mbx7q58d0ss61ynd7y3m_j0m0000gn/T/TemporaryItems/NSIRD_screencaptureui_HU4VPl/스크린햣 2026-08-08 오후 3.13.27.png` (642 × 248 px).
+- Changed state: compact, bordered left/right sidebar controls in the upper-left toolbar; visual scale selector; active deployment and route opening in a new browser tab.
+- Fonts and typography: existing dense KNUD toolbar tokens remain in use.
+- Spacing and layout rhythm: controls use a 28 × 26 px framed density based on the source image.
+- Colors and visual tokens: existing charcoal, muted icon, and yellow hover tokens are retained.
+- Image quality and asset fidelity: the reference’s standard toolbar icon is represented by the installed Phosphor icon library.
+- Copy and content: controls are icon-first with accessible Korean labels; scale and original-tab actions are product-specific additions.
+
+### Incremental finding
+
+- [P1] Browser-rendered comparison unavailable in this environment.
+  - Evidence: no in-app browser control or implementation screenshot capture tool is available for this turn.
+  - Impact: this exact updated toolbar state cannot be checked against the supplied source at a matching viewport.
+  - Fix: capture the Hub toolbar in its default state and compare it beside the source image before accepting pixel-level polish.
+
+final result: blocked
