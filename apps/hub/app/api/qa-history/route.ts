@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const { data: comments, error: commentsError } = await supabase
       .from("qa_comments")
       .select(
-        "id, body, priority, status, pathname, viewport_width, viewport_height, created_at, deployment_id, author_id",
+        "id, body, priority, status, pathname, viewport_width, viewport_height, scroll_x, scroll_y, element_qa_id, normalized_anchor_json, created_at, deployment_id, author_id",
       )
       .eq("project_id", project.id)
       .is("archived_at", null)
