@@ -289,6 +289,44 @@
 .qa-list-drawer__status.is-review_requested { background: #eee6ff; color: #5e3a91; }
 .qa-list-drawer__status.is-done { background: #e7eee6; color: #4c6c4b; }
 
+.qa-history-page { min-height: 100dvh; background: #f3f2ef; color: #111; }
+.qa-history-header { height: 48px; padding: 0 max(22px, calc((100vw - 1180px) / 2)); border-bottom: 1px solid #dededa; background: #111; display: flex; align-items: center; justify-content: space-between; color: #fff; }
+.qa-history-header button { height: 28px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; display: inline-flex; align-items: center; gap: 5px; color: #dbdbd6; font-size: 10.5px; font-weight: 700; }
+.qa-history-header button:hover { background: #2a2a27; color: var(--yellow); }
+.qa-history-header button svg { width: 14px; height: 14px; }
+.qa-history-header > span { color: #a8a8a2; font: 10px var(--mono); letter-spacing: .08em; }
+.qa-history-content { width: min(1180px, calc(100% - 44px)); margin: 0 auto; padding: 62px 0 80px; }
+.qa-history-title { padding-bottom: 32px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.qa-history-title p { margin: 0 0 9px; color: #777770; font: 11px var(--mono); letter-spacing: .08em; }
+.qa-history-title h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); letter-spacing: -.06em; line-height: 1; }
+.qa-history-title > div > span { display: block; margin-top: 13px; color: #777770; font-size: 13px; }
+.qa-history-count { min-width: 110px; padding: 13px 15px; border: 1px solid #d9d9d4; border-radius: 8px; background: #fff; }
+.qa-history-count small { display: block; color: #8a8a85; font-size: 10px; }
+.qa-history-count strong { display: block; margin-top: 4px; font: 700 27px/1 var(--mono); }
+.qa-history-filters { min-height: 58px; padding: 10px 12px; border: 1px solid #dcdcd7; border-radius: 8px 8px 0 0; background: #fff; display: flex; align-items: center; gap: 10px; }
+.qa-history-filters > span { display: inline-flex; align-items: center; gap: 5px; color: #777770; font-size: 10.5px; font-weight: 700; }
+.qa-history-filters > span svg { width: 14px; height: 14px; }
+.qa-history-filters select { height: 31px; max-width: 230px; padding: 0 9px; border: 1px solid #d7d7d2; border-radius: 5px; background: #fff; color: #242424; font-size: 10.5px; }
+.qa-history-statuses { margin-left: auto; display: flex; flex-wrap: wrap; gap: 5px; }
+.qa-history-statuses button { height: 29px; padding: 0 9px; border: 1px solid #dededa; border-radius: 999px; background: #fff; color: #686863; font-size: 10px; font-weight: 700; }
+.qa-history-statuses button.is-selected { border-color: #111; background: #111; color: #fff; }
+.qa-history-list { border: 1px solid #dcdcd7; border-top: 0; border-radius: 0 0 8px 8px; overflow: hidden; background: #fff; }
+.qa-history-item { width: 100%; min-height: 76px; padding: 13px 17px; border: 0; border-bottom: 1px solid #efefeb; background: #fff; display: flex; align-items: center; gap: 12px; color: #111; text-align: left; }
+.qa-history-item:last-child { border-bottom: 0; }
+.qa-history-item:hover { background: #fff9d5; }
+.qa-history-item > svg { width: 17px; height: 17px; flex: 0 0 auto; color: #9a9a95; }
+.qa-history-item__priority { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #a7a7a1; }
+.qa-history-item__priority.is-medium { background: #e1a600; }.qa-history-item__priority.is-high { background: #e76e1e; }.qa-history-item__priority.is-blocker { background: #d93025; }
+.qa-history-item__main { min-width: 0; flex: 1; }
+.qa-history-item__main b { overflow: hidden; display: block; font-size: 13px; font-weight: 650; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.qa-history-item__main small { overflow: hidden; display: block; margin-top: 6px; color: #858580; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.qa-history-item__version { width: 112px; flex: 0 0 auto; display: grid; justify-items: end; gap: 5px; }
+.qa-history-item__version code { color: #363633; font-size: 10.5px; }
+.qa-history-item__version em { padding: 3px 5px; border-radius: 4px; background: #f1f1ed; color: #74746f; font-size: 9px; font-style: normal; font-weight: 700; }
+.qa-history-item__version em.is-open { background: #fff1b7; color: #6d5600; }.qa-history-item__version em.is-in_progress { background: #e2f3ff; color: #126687; }.qa-history-item__version em.is-review_requested { background: #eee6ff; color: #5e3a91; }.qa-history-item__version em.is-done { background: #e7eee6; color: #4c6c4b; }
+.qa-history-empty { margin: 0; padding: 70px 20px; color: #858580; text-align: center; font-size: 13px; }.qa-history-empty.is-error { color: #c4251a; }
+@media (max-width: 720px) { .qa-history-content { width: min(100% - 28px, 1180px); padding-top: 38px; }.qa-history-title { align-items: flex-start; flex-direction: column; }.qa-history-filters { align-items: flex-start; flex-wrap: wrap; }.qa-history-statuses { width: 100%; margin-left: 0; }.qa-history-item { align-items: flex-start; padding: 13px 11px; }.qa-history-item__main b { white-space: normal; }.qa-history-item__version { width: auto; align-items: end; }.qa-history-header { padding: 0 14px; }.qa-history-header > span { display: none; } }
+
 @media (max-width: 900px) {
   .login { min-height: 100dvh; height: auto; margin: 0; grid-template-columns: 1fr; }
   .login__brand { display: none; }

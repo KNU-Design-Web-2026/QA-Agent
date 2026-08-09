@@ -209,7 +209,10 @@ export function QaWorkspace({
   const [deployments, setDeployments] = useState<DeploymentInfo[]>([]);
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<
     string | null
-  >(null);
+  >(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("deployment");
+  });
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isRegisteringDeployment, setIsRegisteringDeployment] = useState(false);
@@ -296,8 +299,10 @@ export function QaWorkspace({
         );
       const nextDeployments = result.deployments ?? [];
       setDeployments(nextDeployments);
-      setSelectedDeploymentId(
-        result.activeDeploymentId ?? nextDeployments[0]?.id ?? null,
+      setSelectedDeploymentId((current) =>
+        nextDeployments.some((deployment: DeploymentInfo) => deployment.id === current)
+          ? current
+          : (result.activeDeploymentId ?? nextDeployments[0]?.id ?? null),
       );
     } catch (error) {
       setDeploymentsError(
@@ -851,7 +856,14 @@ export function QaWorkspace({
             type="button"
             onClick={openQaList}
           >
-            QA 목록
+            이 버전 의견
+          </button>
+          <button
+            className="qa-list-button"
+            type="button"
+            onClick={() => window.location.assign("/history")}
+          >
+            전체 기록
           </button>
           <span className="user-profile" title={accessSession?.email}>
             <b>{accessSession?.displayName ?? "사용자"}</b>
