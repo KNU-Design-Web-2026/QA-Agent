@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       .is("archived_at", null)
       .order("created_at", { ascending: false });
     if (scope === "authored") query = query.eq("author_id", session.userId);
-    else query = query.eq("pathname", pathname);
+    else if (scope !== "all") query = query.eq("pathname", pathname);
     const { data: rows, error } = await query;
     if (error) throw new Error("코멘트 목록을 불러오지 못했습니다.");
     const authorIds = [...new Set((rows ?? []).map((row) => row.author_id))];

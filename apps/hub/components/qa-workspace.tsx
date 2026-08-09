@@ -191,6 +191,10 @@ export function QaWorkspace({
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [comments, setComments] = useState<QaComment[]>([]);
   const [authoredComments, setAuthoredComments] = useState<QaComment[]>([]);
+  const [allComments, setAllComments] = useState<QaComment[]>([]);
+  const [isQaListOpen, setIsQaListOpen] = useState(false);
+  const [isLoadingAllComments, setIsLoadingAllComments] = useState(false);
+  const [qaListStatus, setQaListStatus] = useState<"all" | QaStatus>("all");
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
@@ -365,6 +369,30 @@ export function QaWorkspace({
     }
   }, [actualUrl, projectSlug, selectedDeployment]);
 
+  const loadAllComments = useCallback(async () => {
+    if (!selectedDeployment) {
+      setAllComments([]);
+      return;
+    }
+    setIsLoadingAllComments(true);
+    try {
+      const params = new URLSearchParams({
+        projectSlug,
+        deploymentUrl: actualUrl,
+        scope: "all",
+      });
+      const response = await fetch(`/api/comments?${params}`);
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error ?? "QA 목록을 불러오지 못했습니다.");
+      setAllComments(result.comments ?? []);
+    } catch {
+      setAllComments([]);
+    } finally {
+      setIsLoadingAllComments(false);
+    }
+  }, [actualUrl, projectSlug, selectedDeployment]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -528,6 +556,7 @@ export function QaWorkspace({
       draftRef.current = null;
       await loadComments();
       await loadAuthoredComments();
+      if (isQaListOpen) await loadAllComments();
       setSelectedCommentId(result.id);
     } catch (error) {
       setSaveError(
@@ -616,6 +645,7 @@ export function QaWorkspace({
         throw new Error(result.error ?? "상태를 변경하지 못했습니다.");
       await loadComments();
       await loadAuthoredComments();
+      if (isQaListOpen) await loadAllComments();
     } catch (error) {
       setCommentsError(
         error instanceof Error ? error.message : "상태를 변경하지 못했습니다.",
@@ -654,6 +684,7 @@ export function QaWorkspace({
       setIsEditingComment(false);
       await loadComments();
       await loadAuthoredComments();
+      if (isQaListOpen) await loadAllComments();
     } catch (error) {
       setEditError(
         error instanceof Error
@@ -667,8 +698,17 @@ export function QaWorkspace({
 
   const openComment = (comment: QaComment) => {
     setRoute(comment.pathname);
+    const viewportIndex = viewports.findIndex(
+      (viewport) => viewport.width === comment.viewport_width,
+    );
+    if (viewportIndex !== -1) setSelectedViewport(viewportIndex);
     setSelectedCommentId(comment.id);
     setIsEditingComment(false);
+  };
+
+  const openQaList = () => {
+    setIsQaListOpen(true);
+    void loadAllComments();
   };
 
   return (
@@ -806,6 +846,13 @@ export function QaWorkspace({
               새 버전 등록
             </button>
           )}
+          <button
+            className="qa-list-button"
+            type="button"
+            onClick={openQaList}
+          >
+            QA 목록
+          </button>
           <span className="user-profile" title={accessSession?.email}>
             <b>{accessSession?.displayName ?? "사용자"}</b>
           </span>
@@ -1266,6 +1313,19 @@ export function QaWorkspace({
           />
         </aside>
       </section>
+      {isQaListOpen && (
+        <QaListDrawer
+          comments={allComments}
+          isLoading={isLoadingAllComments}
+          status={qaListStatus}
+          onStatusChange={setQaListStatus}
+          onClose={() => setIsQaListOpen(false)}
+          onSelect={(comment) => {
+            setIsQaListOpen(false);
+            openComment(comment);
+          }}
+        />
+      )}
       {isTutorialOpen && (
         <TutorialTour
           step={tutorialStep}
@@ -1635,6 +1695,117 @@ function CommentListItem({
         </small>
       </span>
     </button>
+  );
+}
+
+function QaListDrawer({
+  comments,
+  isLoading,
+  status,
+  onStatusChange,
+  onClose,
+  onSelect,
+}: {
+  comments: QaComment[];
+  isLoading: boolean;
+  status: "all" | QaStatus;
+  onStatusChange: (status: "all" | QaStatus) => void;
+  onClose: () => void;
+  onSelect: (comment: QaComment) => void;
+}) {
+  const visibleComments =
+    status === "all"
+      ? comments
+      : comments.filter((comment) => comment.status === status);
+  const filters: Array<{ value: "all" | QaStatus; label: string }> = [
+    { value: "all", label: "전체" },
+    { value: "open", label: "열림" },
+    { value: "in_progress", label: "진행 중" },
+    { value: "review_requested", label: "검토 요청" },
+    { value: "done", label: "완료" },
+  ];
+
+  return (
+    <div
+      className="qa-list-drawer-backdrop"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <aside
+        className="qa-list-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="이 버전의 QA 목록"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="qa-list-drawer__header">
+          <div>
+            <span>이 버전의 전체 의견</span>
+            <strong>QA 목록</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label="QA 목록 닫기">
+            <X />
+          </button>
+        </header>
+        <div className="qa-list-drawer__summary">
+          <span>
+            전체 <b>{comments.length}</b>
+          </span>
+          <span>
+            미완료 <b>{comments.filter((comment) => comment.status !== "done").length}</b>
+          </span>
+        </div>
+        <div className="qa-list-drawer__filters" aria-label="상태별 보기">
+          {filters.map((filter) => (
+            <button
+              key={filter.value}
+              className={status === filter.value ? "is-selected" : ""}
+              type="button"
+              onClick={() => onStatusChange(filter.value)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="qa-list-drawer__items">
+          {isLoading ? (
+            <p className="qa-list-drawer__empty">QA 목록을 불러오는 중입니다.</p>
+          ) : visibleComments.length === 0 ? (
+            <p className="qa-list-drawer__empty">
+              {status === "all"
+                ? "아직 남겨진 의견이 없습니다."
+                : "이 상태의 의견이 없습니다."}
+            </p>
+          ) : (
+            visibleComments.map((comment) => {
+              const authorName = commentAuthorName(comment.author);
+              return (
+                <button
+                  key={comment.id}
+                  className="qa-list-drawer__item"
+                  type="button"
+                  onClick={() => onSelect(comment)}
+                >
+                  <span
+                    className={`qa-list-drawer__priority qa-list-drawer__priority--${comment.priority}`}
+                    aria-hidden="true"
+                  />
+                  <span className="qa-list-drawer__item-content">
+                    <b>{comment.body}</b>
+                    <small>
+                      {authorName} · {comment.pathname} · {comment.viewport_width} × {comment.viewport_height}
+                    </small>
+                  </span>
+                  <em className={`qa-list-drawer__status is-${comment.status}`}>
+                    {statusLabel[comment.status]}
+                  </em>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
