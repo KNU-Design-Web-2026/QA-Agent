@@ -15,11 +15,30 @@ async function requireSession() {
 
 async function findProjectAndDeployment(projectSlug: string, deploymentUrl: string) {
   const supabase = createAdminClient();
-  const { data: project, error: projectError } = await supabase.from("projects").select("id").eq("slug", projectSlug).single();
+  const { data: project, error: projectError } = await supabase.from("projects").select("id, organization_id").eq("slug", projectSlug).single();
   if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
   const { data: deployment, error: deploymentError } = await supabase.from("deployments").select("id, git_sha, deployed_at").eq("project_id", project.id).eq("immutable_url", deploymentUrl).single();
   if (deploymentError || !deployment) throw new Error("현재 배포본이 아직 QA 프로젝트에 등록되지 않았습니다.");
   return { supabase, project, deployment };
+}
+
+async function notifyAdmins(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  commentId: string,
+  kind: "comment_created" | "reopened" | "confirmed",
+  excludeUserId?: string,
+) {
+  const { data: admins } = await supabase
+    .from("memberships")
+    .select("user_id")
+    .eq("organization_id", organizationId)
+    .eq("role", "admin");
+  const recipients = (admins ?? []).map((admin) => admin.user_id).filter((userId) => userId !== excludeUserId);
+  if (recipients.length)
+    await supabase.from("notifications").insert(
+      recipients.map((userId) => ({ user_id: userId, qa_comment_id: commentId, kind })),
+    );
 }
 
 export async function GET(request: Request) {
@@ -74,6 +93,7 @@ export async function POST(request: Request) {
     if (commentError || !comment) throw new Error("코멘트를 저장하지 못했습니다.");
     const { error: annotationError } = await supabase.from("annotations").insert({ qa_comment_id: comment.id, kind: input.kind === "area" ? "rect" : "pin", geometry_json: input.anchor, style_json: { color: "yellow" } });
     if (annotationError) throw new Error("코멘트 위치를 저장하지 못했습니다.");
+    await notifyAdmins(supabase, project.organization_id, comment.id, "comment_created", session.userId);
     return NextResponse.json({ id: comment.id });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트를 저장하지 못했습니다." }, { status: 400 }); }
 }
@@ -114,8 +134,30 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ comment });
     }
     const input = transitionSchema.parse(payload);
+    const { data: currentComment, error: currentCommentError } = await supabase
+      .from("qa_comments")
+      .select("author_id, project_id, status")
+      .eq("id", input.commentId)
+      .single();
+    if (currentCommentError || !currentComment) throw new Error("코멘트를 찾을 수 없습니다.");
     const { data, error } = await supabase.rpc("transition_qa_comment_as_actor", { comment_id: input.commentId, next_status: input.nextStatus, actor_id: session.userId, note: input.note ?? null });
     if (error || !data) throw new Error(error?.message ?? "상태를 변경하지 못했습니다.");
+    if (input.nextStatus === "review_requested" && currentComment.author_id !== session.userId)
+      await supabase.from("notifications").insert({ user_id: currentComment.author_id, qa_comment_id: input.commentId, kind: "review_requested" });
+    const isReopened =
+      (currentComment.status === "review_requested" && input.nextStatus === "in_progress") ||
+      (currentComment.status === "done" && input.nextStatus === "open");
+    if (input.nextStatus === "done" || isReopened) {
+        const { data: project } = await supabase.from("projects").select("organization_id").eq("id", currentComment.project_id).single();
+        if (project)
+          await notifyAdmins(
+            supabase,
+            project.organization_id,
+            input.commentId,
+            input.nextStatus === "done" ? "confirmed" : "reopened",
+            session.userId,
+          );
+    }
     return NextResponse.json({ comment: data });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "상태를 변경하지 못했습니다." }, { status: 400 });
