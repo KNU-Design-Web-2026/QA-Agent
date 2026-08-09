@@ -362,11 +362,14 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "코멘트 목록을 불러오지 못했습니다.");
-      setComments(result.comments ?? []);
+      const activeComments = (result.comments ?? []).filter(
+        (comment: QaComment) => comment.status !== "done",
+      );
+      setComments(activeComments);
       setSelectedCommentId((current) =>
-        result.comments?.some((comment: QaComment) => comment.id === current)
+        activeComments.some((comment: QaComment) => comment.id === current)
           ? current
-          : (result.comments?.[0]?.id ?? null),
+          : (activeComments[0]?.id ?? null),
       );
     } catch (error) {
       setCommentsError(
@@ -396,7 +399,11 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "내 코멘트를 불러오지 못했습니다.");
-      setAuthoredComments(result.comments ?? []);
+      setAuthoredComments(
+        (result.comments ?? []).filter(
+          (comment: QaComment) => comment.status !== "done",
+        ),
+      );
     } catch {
       setAuthoredComments([]);
     }
@@ -418,7 +425,11 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "QA 목록을 불러오지 못했습니다.");
-      setAllComments(result.comments ?? []);
+      setAllComments(
+        (result.comments ?? []).filter(
+          (comment: QaComment) => comment.status !== "done",
+        ),
+      );
     } catch {
       setAllComments([]);
     } finally {
