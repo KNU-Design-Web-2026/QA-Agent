@@ -3,6 +3,7 @@
 import {
   ArrowsOutCardinal,
   ArrowSquareOut,
+  Bell,
   CaretDown,
   CaretLeft,
   CaretRight,
@@ -69,6 +70,21 @@ type QaComment = {
     created_at: string;
     actor: { display_name: string | null; email: string } | null;
   }>;
+};
+type QaNotification = {
+  id: string;
+  kind: "comment_created" | "review_requested" | "reopened" | "confirmed";
+  read_at: string | null;
+  created_at: string;
+  comment: {
+    id: string;
+    body: string;
+    pathname: string;
+    viewport_width: number;
+    viewport_height: number;
+    deployment_id: string;
+    author: QaComment["author"];
+  };
 };
 type DeploymentInfo = {
   id: string;
@@ -198,6 +214,9 @@ export function QaWorkspace({
   const [isQaListOpen, setIsQaListOpen] = useState(false);
   const [isLoadingAllComments, setIsLoadingAllComments] = useState(false);
   const [qaListStatus, setQaListStatus] = useState<"all" | QaStatus>("all");
+  const [notifications, setNotifications] = useState<QaNotification[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
@@ -401,6 +420,19 @@ export function QaWorkspace({
     }
   }, [actualUrl, projectSlug, selectedDeployment]);
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "알림을 불러오지 못했습니다.");
+      setNotifications(result.notifications ?? []);
+      setUnreadNotificationCount(result.unreadCount ?? 0);
+    } catch {
+      setNotifications([]);
+      setUnreadNotificationCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -457,6 +489,11 @@ export function QaWorkspace({
   useEffect(() => {
     void loadAuthoredComments();
   }, [loadAuthoredComments]);
+  useEffect(() => {
+    void loadNotifications();
+    const timer = window.setInterval(() => void loadNotifications(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [loadNotifications]);
 
   useEffect(() => {
     const commentId = new URLSearchParams(window.location.search).get(
@@ -564,6 +601,7 @@ export function QaWorkspace({
       draftRef.current = null;
       await loadComments();
       await loadAuthoredComments();
+      await loadNotifications();
       if (isQaListOpen) await loadAllComments();
       setSelectedCommentId(result.id);
     } catch (error) {
@@ -653,6 +691,7 @@ export function QaWorkspace({
         throw new Error(result.error ?? "상태를 변경하지 못했습니다.");
       await loadComments();
       await loadAuthoredComments();
+      await loadNotifications();
       if (isQaListOpen) await loadAllComments();
     } catch (error) {
       setCommentsError(
@@ -692,6 +731,7 @@ export function QaWorkspace({
       setIsEditingComment(false);
       await loadComments();
       await loadAuthoredComments();
+      await loadNotifications();
       if (isQaListOpen) await loadAllComments();
     } catch (error) {
       setEditError(
@@ -717,6 +757,35 @@ export function QaWorkspace({
   const openQaList = () => {
     setIsQaListOpen(true);
     void loadAllComments();
+  };
+
+  const markNotificationsRead = async (notificationId?: string) => {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(notificationId ? { action: "read", notificationId } : { action: "read_all" }),
+      });
+      if (notificationId) {
+        setNotifications((current) => current.map((notification) => notification.id === notificationId ? { ...notification, read_at: new Date().toISOString() } : notification));
+        setUnreadNotificationCount((current) => Math.max(0, current - 1));
+      } else {
+        setNotifications((current) => current.map((notification) => ({ ...notification, read_at: notification.read_at ?? new Date().toISOString() })));
+        setUnreadNotificationCount(0);
+      }
+    } catch {
+      // Opening the referenced QA screen remains available even if a read receipt is delayed.
+    }
+  };
+
+  const openNotification = (notification: QaNotification) => {
+    const viewportIndex = viewports.findIndex((viewport) => viewport.width === notification.comment.viewport_width);
+    setSelectedDeploymentId(notification.comment.deployment_id);
+    setRoute(notification.comment.pathname);
+    if (viewportIndex !== -1) setSelectedViewport(viewportIndex);
+    setSelectedCommentId(notification.comment.id);
+    setIsNotificationOpen(false);
+    void markNotificationsRead(notification.id);
   };
 
   return (
@@ -868,6 +937,28 @@ export function QaWorkspace({
           >
             전체 기록
           </button>
+          <div className="notification-menu">
+            <button
+              className="notification-button"
+              type="button"
+              aria-label={`알림${unreadNotificationCount ? ` ${unreadNotificationCount}개` : ""}`}
+              aria-expanded={isNotificationOpen}
+              onClick={() => {
+                setIsNotificationOpen((current) => !current);
+                void loadNotifications();
+              }}
+            >
+              <Bell />
+              {unreadNotificationCount > 0 && <b>{unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}</b>}
+            </button>
+            {isNotificationOpen && (
+              <NotificationPopover
+                notifications={notifications}
+                onOpen={openNotification}
+                onReadAll={() => void markNotificationsRead()}
+              />
+            )}
+          </div>
           <span className="user-profile" title={accessSession?.email}>
             <b>{accessSession?.displayName ?? "사용자"}</b>
           </span>
@@ -1414,6 +1505,59 @@ function commentAuthorName(author: QaComment["author"], fallback = "익명") {
   const name =
     author?.display_name?.trim() || author?.email?.split("@")[0] || fallback;
   return /^[가-힣]{3}$/.test(name) ? name.slice(1) : name;
+}
+
+const notificationCopy: Record<QaNotification["kind"], string> = {
+  comment_created: "새 의견이 남겨졌어요",
+  review_requested: "수정이 반영되었어요. 확인해 주세요",
+  reopened: "다시 수정이 필요해요",
+  confirmed: "디자이너가 최종 확인을 완료했어요",
+};
+
+function NotificationPopover({
+  notifications,
+  onOpen,
+  onReadAll,
+}: {
+  notifications: QaNotification[];
+  onOpen: (notification: QaNotification) => void;
+  onReadAll: () => void;
+}) {
+  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
+  return (
+    <div className="notification-popover" role="dialog" aria-label="알림 목록">
+      <header>
+        <div>
+          <strong>알림</strong>
+          <span>읽지 않음 {unreadCount}</span>
+        </div>
+        {unreadCount > 0 && <button type="button" onClick={onReadAll}>모두 읽음</button>}
+      </header>
+      <div className="notification-popover__list">
+        {notifications.length === 0 ? (
+          <p>새로운 알림이 없습니다.</p>
+        ) : (
+          notifications.map((notification) => (
+            <button
+              key={notification.id}
+              className={!notification.read_at ? "is-unread" : ""}
+              type="button"
+              onClick={() => onOpen(notification)}
+            >
+              <span className={`notification-kind notification-kind--${notification.kind}`} />
+              <span>
+                <b>{notificationCopy[notification.kind]}</b>
+                <strong>{notification.comment.body}</strong>
+                <small>
+                  {commentAuthorName(notification.comment.author)} · {notification.comment.pathname} · {notification.comment.viewport_width} × {notification.comment.viewport_height} · {relativeTime(notification.created_at)}
+                </small>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
 function TutorialTour({
