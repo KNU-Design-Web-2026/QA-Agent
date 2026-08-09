@@ -217,6 +217,8 @@ export function QaWorkspace({
   const [notifications, setNotifications] = useState<QaNotification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isManagementMenuOpen, setIsManagementMenuOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
@@ -914,29 +916,34 @@ export function QaWorkspace({
           )}
         </div>
         <div className="toolbar-actions">
-          {accessSession?.role === "admin" && (
+          <div className="toolbar-menu">
             <button
-              className="register-deployment-button"
+              className="toolbar-menu__trigger"
               type="button"
-              onClick={() => setIsDeploymentModalOpen(true)}
+              aria-expanded={isManagementMenuOpen}
+              onClick={() => setIsManagementMenuOpen((current) => !current)}
             >
-              새 버전 등록
+              검수 관리 <CaretDown />
             </button>
-          )}
-          <button
-            className="qa-list-button"
-            type="button"
-            onClick={openQaList}
-          >
-            이 버전 의견
-          </button>
-          <button
-            className="qa-list-button"
-            type="button"
-            onClick={() => window.location.assign("/history")}
-          >
-            전체 기록
-          </button>
+            {isManagementMenuOpen && (
+              <div className="toolbar-menu__popover">
+                <button type="button" onClick={() => { setIsManagementMenuOpen(false); openQaList(); }}>
+                  <span>이 버전 의견</span>
+                  <small>현재 검수 중인 버전</small>
+                </button>
+                <button type="button" onClick={() => window.location.assign("/history")}>
+                  <span>전체 QA 기록</span>
+                  <small>모든 버전의 검수 이력</small>
+                </button>
+                {accessSession?.role === "admin" && (
+                  <button type="button" onClick={() => { setIsManagementMenuOpen(false); setIsDeploymentModalOpen(true); }}>
+                    <span>새 버전 등록</span>
+                    <small>검수 기준 버전 추가</small>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <div className="notification-menu">
             <button
               className="notification-button"
@@ -959,27 +966,27 @@ export function QaWorkspace({
               />
             )}
           </div>
-          <span className="user-profile" title={accessSession?.email}>
-            <b>{accessSession?.displayName ?? "사용자"}</b>
-          </span>
-          <button
-            className="tutorial-replay-button"
-            type="button"
-            onClick={openTutorial}
-          >
-            튜토리얼 다시보기
-          </button>
-          <button
-            className="logout-button"
-            type="button"
-            onClick={() => void signOut()}
-            disabled={isSigningOut}
-            title="로그아웃"
-            aria-label="로그아웃"
-          >
-            <SignOut />
-            {isSigningOut ? "나가는 중" : "로그아웃"}
-          </button>
+          <div className="profile-menu">
+            <button
+              className="user-profile"
+              type="button"
+              title={accessSession?.email}
+              aria-expanded={isProfileMenuOpen}
+              onClick={() => setIsProfileMenuOpen((current) => !current)}
+            >
+              <b>{accessSession?.displayName ?? "사용자"}</b>
+              <CaretDown />
+            </button>
+            {isProfileMenuOpen && (
+              <div className="profile-menu__popover">
+                <span>{accessSession?.email}</span>
+                <button type="button" onClick={() => { setIsProfileMenuOpen(false); openTutorial(); }}>사용 가이드 다시보기</button>
+                <button type="button" onClick={() => void signOut()} disabled={isSigningOut}>
+                  <SignOut /> {isSigningOut ? "나가는 중" : "로그아웃"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       {comingSoon && (
