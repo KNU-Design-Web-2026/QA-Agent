@@ -283,6 +283,8 @@
 .comment-list-item__content { min-width: 0; flex: 1; }
 .comment-list-item__content b { overflow: hidden; display: block; color: #242424; font-size: 10.5px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .comment-list-item__content small { overflow: hidden; display: block; margin-top: 3px; color: #8a8a85; font-size: 9.5px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.comment-list-item__status { flex: 0 0 auto; padding: 3px 5px; border: 1px solid #dededa; border-radius: 999px; background: #f4f4f1; color: #6e6e69; font-size: 8.5px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.comment-list-item__status.is-open { border-color: #efd77a; background: #fff3bf; color: #6d5600; }.comment-list-item__status.is-in_progress { border-color: #b9def1; background: #e8f6ff; color: #126687; }.comment-list-item__status.is-review_requested { border-color: #d6c4f0; background: #f1ebff; color: #5e3a91; }.comment-list-item__status.is-done { border-color: #c8ddc7; background: #eaf2e9; color: #4c6c4b; }
 
 .qa-list-drawer-backdrop { position: fixed; z-index: 240; inset: 0; background: #1114; display: flex; justify-content: flex-end; }
 .qa-list-drawer { width: min(410px, calc(100vw - 24px)); height: 100dvh; padding: 0 14px 18px; overflow-y: auto; background: #fff; box-shadow: -18px 0 46px #1113; color: #111; }
