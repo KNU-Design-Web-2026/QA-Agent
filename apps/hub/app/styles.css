@@ -261,6 +261,9 @@
 .comment-composer { width: 360px; }
 .comment-composer header { padding: 10px 12px; }
 .comment-composer textarea { min-height: 96px; padding: 12px; font-size: 13.5px; }
+.composer-reviewer { margin: 0 12px; padding: 8px 0; border-top: 1px solid #f0f0ec; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.composer-reviewer > span { color: #777770; font-size: 10px; font-weight: 700; }
+.composer-reviewer select { height: 27px; min-width: 112px; padding: 0 6px; border: 1px solid #d8d8d3; border-radius: 5px; background: #fff; color: #111; font-size: 10.5px; font-weight: 700; }
 .composer-actions { margin: 0 12px; padding: 10px 0; }
 .composer-actions button { height: 32px; font-size: 11.5px; }
 .composer-actions .cancel { padding: 0 7px; }

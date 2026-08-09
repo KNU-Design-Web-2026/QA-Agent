@@ -86,6 +86,7 @@ type QaNotification = {
     author: QaComment["author"];
   };
 };
+type Reviewer = { id: string; displayName: string };
 type DeploymentInfo = {
   id: string;
   immutable_url: string;
@@ -219,6 +220,8 @@ export function QaWorkspace({
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isManagementMenuOpen, setIsManagementMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
+  const [reviewerTarget, setReviewerTarget] = useState("none");
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
@@ -435,6 +438,21 @@ export function QaWorkspace({
     }
   }, []);
 
+  const loadReviewers = useCallback(async () => {
+    if (accessSession?.role !== "admin") {
+      setReviewers([]);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/reviewers?${new URLSearchParams({ projectSlug })}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "디자이너 목록을 불러오지 못했습니다.");
+      setReviewers(result.reviewers ?? []);
+    } catch {
+      setReviewers([]);
+    }
+  }, [accessSession?.role, projectSlug]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -496,6 +514,9 @@ export function QaWorkspace({
     const timer = window.setInterval(() => void loadNotifications(), 30_000);
     return () => window.clearInterval(timer);
   }, [loadNotifications]);
+  useEffect(() => {
+    void loadReviewers();
+  }, [loadReviewers]);
 
   useEffect(() => {
     const commentId = new URLSearchParams(window.location.search).get(
@@ -591,12 +612,21 @@ export function QaWorkspace({
           anchor: normalizedAnchor,
           type: "visual",
           priority,
+          reviewerIds:
+            accessSession?.role === "admin"
+              ? reviewerTarget === "all"
+                ? reviewers.map((reviewer) => reviewer.id)
+                : reviewerTarget === "none"
+                  ? []
+                  : [reviewerTarget]
+              : [],
         }),
       });
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "코멘트를 저장하지 못했습니다.");
       setMessage("");
+      setReviewerTarget("none");
       setCommentOpen(false);
       setTool("browse");
       setDraft(null);
@@ -1314,6 +1344,10 @@ export function QaWorkspace({
                       canvasHeight={Math.round(currentViewport.height * zoom)}
                       priority={priority}
                       setPriority={setPriority}
+                      showReviewerTarget={accessSession?.role === "admin"}
+                      reviewerTarget={reviewerTarget}
+                      reviewers={reviewers}
+                      onReviewerTargetChange={setReviewerTarget}
                       onCancel={() => {
                         setCommentOpen(false);
                         setDraft(null);
@@ -2154,6 +2188,10 @@ function CommentComposer({
   canvasHeight,
   priority,
   setPriority,
+  showReviewerTarget,
+  reviewerTarget,
+  reviewers,
+  onReviewerTargetChange,
   onCancel,
   onSave,
 }: {
@@ -2167,6 +2205,10 @@ function CommentComposer({
   canvasHeight: number;
   priority: QaComment["priority"];
   setPriority: (value: QaComment["priority"]) => void;
+  showReviewerTarget: boolean;
+  reviewerTarget: string;
+  reviewers: Reviewer[];
+  onReviewerTargetChange: (value: string) => void;
   onCancel: () => void;
   onSave: () => Promise<void>;
 }) {
@@ -2199,6 +2241,24 @@ function CommentComposer({
         placeholder="이 위치에 대한 피드백을 입력하세요."
         required
       />
+      {showReviewerTarget && (
+        <label className="composer-reviewer">
+          <span>수정 후 검토 요청</span>
+          <select
+            value={reviewerTarget}
+            onChange={(event) => onReviewerTargetChange(event.target.value)}
+            aria-label="검토 요청 대상"
+          >
+            <option value="none">요청 없음</option>
+            {reviewers.map((reviewer) => (
+              <option key={reviewer.id} value={reviewer.id}>
+                {reviewer.displayName}
+              </option>
+            ))}
+            {reviewers.length > 1 && <option value="all">전체</option>}
+          </select>
+        </label>
+      )}
       <div className="composer-actions">
         <label className="select-pill">
           <i />
