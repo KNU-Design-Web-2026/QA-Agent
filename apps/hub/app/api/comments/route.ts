@@ -64,11 +64,12 @@ export async function GET(request: Request) {
     const { data: rows, error } = await query;
     if (error) throw new Error("코멘트 목록을 불러오지 못했습니다.");
     const commentIds = (rows ?? []).map((row) => row.id);
-    const [{ data: annotations }, { data: events }] = await Promise.all([
+    const [{ data: annotations }, { data: events }, { data: reviewRecipients }] = await Promise.all([
       commentIds.length ? supabase.from("annotations").select("id, qa_comment_id, kind, geometry_json, style_json, z_index").in("qa_comment_id", commentIds).order("z_index") : Promise.resolve({ data: [] }),
       commentIds.length ? supabase.from("qa_events").select("id, qa_comment_id, actor_id, kind, from_status, to_status, payload_json, created_at").in("qa_comment_id", commentIds).order("created_at") : Promise.resolve({ data: [] }),
+      commentIds.length ? supabase.from("qa_review_recipients").select("qa_comment_id, reviewer_id").in("qa_comment_id", commentIds) : Promise.resolve({ data: [] }),
     ]);
-    const profileIds = [...new Set([...(rows ?? []).map((row) => row.author_id), ...(events ?? []).map((event) => event.actor_id).filter(Boolean)])];
+    const profileIds = [...new Set([...(rows ?? []).map((row) => row.author_id), ...(events ?? []).map((event) => event.actor_id).filter(Boolean), ...(reviewRecipients ?? []).map((recipient) => recipient.reviewer_id)])];
     const { data: authors } = profileIds.length
       ? await supabase.from("profiles").select("id, display_name, email").in("id", profileIds)
       : { data: [] };
@@ -77,7 +78,9 @@ export async function GET(request: Request) {
     for (const annotation of annotations ?? []) annotationsByComment.set(annotation.qa_comment_id, [...(annotationsByComment.get(annotation.qa_comment_id) ?? []), annotation]);
     const eventsByComment = new Map<string, unknown[]>();
     for (const event of events ?? []) eventsByComment.set(event.qa_comment_id, [...(eventsByComment.get(event.qa_comment_id) ?? []), { ...event, actor: event.actor_id ? authorById.get(event.actor_id) ?? null : null }]);
-    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [] })) });
+    const reviewersByComment = new Map<string, unknown[]>();
+    for (const recipient of reviewRecipients ?? []) reviewersByComment.set(recipient.qa_comment_id, [...(reviewersByComment.get(recipient.qa_comment_id) ?? []), authorById.get(recipient.reviewer_id) ?? null].filter(Boolean));
+    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [], reviewers: reviewersByComment.get(row.id) ?? [] })) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트 목록을 불러오지 못했습니다." }, { status: 400 });
   }
