@@ -264,6 +264,11 @@
 .composer-reviewer { margin: 0 12px; padding: 8px 0; border-top: 1px solid #f0f0ec; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .composer-reviewer > span { color: #777770; font-size: 10px; font-weight: 700; }
 .composer-reviewer select { height: 27px; min-width: 112px; padding: 0 6px; border: 1px solid #d8d8d3; border-radius: 5px; background: #fff; color: #111; font-size: 10.5px; font-weight: 700; }
+.comment-composer .select-pill { height: 30px; padding: 0 10px; border: 1px solid #d8d8d3; border-radius: 9px; background: #fbfbfa; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.comment-composer .select-pill:hover { border-color: #a9a9a3; background: #fff; }
+.comment-composer .select-pill:focus-within { border-color: #111; background: #fff; box-shadow: 0 0 0 3px #fcd51947; }
+.comment-composer .select-pill i { width: 7px; height: 7px; }
+.comment-composer .select-pill select { min-width: 68px; font-size: 10.5px; font-weight: 750; }
 .composer-actions { margin: 0 12px; padding: 10px 0; }
 .composer-actions button { height: 32px; font-size: 11.5px; }
 .composer-actions .cancel { padding: 0 7px; }
