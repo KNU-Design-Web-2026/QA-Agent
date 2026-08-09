@@ -165,7 +165,7 @@ export function QaHistory() {
   };
 
   return <main className="qa-history-page">
-    <header className="qa-history-header"><button type="button" onClick={() => window.location.assign("/")}><ArrowLeft /> 검수 화면으로</button><span>KNUD DESIGN QA HUB</span></header>
+    <header className="qa-history-header"><button type="button" onClick={() => window.location.assign("/")}><ArrowLeft /> 검수 화면으로 돌아가기</button><span>KNUD DESIGN QA HUB</span></header>
     <section className="qa-history-content">
       <div className="qa-history-title"><div><p>검수 기록</p><h1>전체 QA 목록</h1><span>남겨진 모든 의견을 버전별로 보관하고 다시 확인할 수 있습니다.</span></div><div className="qa-history-count"><small>전체 의견</small><strong>{comments.length}</strong></div></div>
       <div className="qa-history-filters"><span><FunnelSimple /> 보기</span><select value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} aria-label="버전별 보기"><option value="all">모든 버전</option>{deployments.map((deployment) => <option key={deployment.id} value={deployment.id}>{deployment.git_sha.slice(0, 7)} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}</option>)}</select><div className="qa-history-statuses" aria-label="상태별 보기">{(["all", "open", "in_progress", "review_requested", "done"] as const).map((value) => <button key={value} type="button" className={status === value ? "is-selected" : ""} onClick={() => setStatus(value)}>{value === "all" ? "전체" : statusLabel[value]}</button>)}</div></div>
