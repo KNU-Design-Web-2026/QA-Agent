@@ -60,6 +60,15 @@ type QaComment = {
     kind: string;
     geometry_json: Record<string, unknown>;
   }>;
+  events: Array<{
+    id: string;
+    kind: string;
+    from_status: QaStatus | null;
+    to_status: QaStatus | null;
+    payload_json: { note?: string };
+    created_at: string;
+    actor: { display_name: string | null; email: string } | null;
+  }>;
 };
 type DeploymentInfo = {
   id: string;
@@ -95,12 +104,6 @@ const priorityLabel: Record<QaComment["priority"], string> = {
   medium: "Medium",
   high: "High",
   blocker: "Blocker",
-};
-const nextStatus: Record<QaStatus, QaStatus> = {
-  open: "in_progress",
-  in_progress: "review_requested",
-  review_requested: "done",
-  done: "open",
 };
 const tutorialSteps = [
   {
@@ -636,14 +639,14 @@ export function QaWorkspace({
     }
   }
 
-  async function updateCommentStatus(nextStatus: QaStatus) {
+  async function updateCommentStatus(nextStatus: QaStatus, note?: string) {
     if (!selectedComment) return;
     setIsTransitioning(true);
     try {
       const response = await fetch("/api/comments", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ commentId: selectedComment.id, nextStatus }),
+        body: JSON.stringify({ commentId: selectedComment.id, nextStatus, note }),
       });
       const result = await response.json();
       if (!response.ok)
@@ -1315,13 +1318,27 @@ export function QaWorkspace({
             onSaveEdit={() => void saveEditedComment()}
             onEditedBodyChange={setEditedBody}
             onEditedPriorityChange={setEditedPriority}
-            canComplete={accessSession?.role === "admin"}
-            onTransition={() =>
+            canRequestReview={
+              accessSession?.role === "admin" ||
+              accessSession?.role === "developer"
+            }
+            canConfirm={
+              accessSession?.role === "admin" ||
+              (Boolean(accessSession?.email) &&
+                selectedComment?.author?.email.toLowerCase() ===
+                  accessSession?.email.toLowerCase())
+            }
+            onStartWork={() => void updateCommentStatus("in_progress")}
+            onRequestReview={() =>
+              void updateCommentStatus("review_requested")
+            }
+            onConfirm={() => void updateCommentStatus("done")}
+            onReopen={(note) =>
               void updateCommentStatus(
-                nextStatus[selectedComment?.status ?? "open"],
+                selectedComment?.status === "done" ? "open" : "in_progress",
+                note,
               )
             }
-            onComplete={() => void updateCommentStatus("done")}
           />
         </aside>
       </section>
@@ -2079,6 +2096,14 @@ function CompareOverlay({
   );
 }
 
+function eventLabel(event: QaComment["events"][number]) {
+  if (event.kind === "review_requested") return "수정 완료 후 검토 요청";
+  if (event.kind === "confirmed") return "확인 완료";
+  if (event.kind === "reopened") return "다시 수정 요청";
+  if (event.to_status === "in_progress") return "진행 중으로 변경";
+  return "상태 변경";
+}
+
 function CommentInspector({
   comment,
   isLoading,
@@ -2094,9 +2119,12 @@ function CommentInspector({
   onSaveEdit,
   onEditedBodyChange,
   onEditedPriorityChange,
-  canComplete,
-  onTransition,
-  onComplete,
+  canRequestReview,
+  canConfirm,
+  onStartWork,
+  onRequestReview,
+  onConfirm,
+  onReopen,
 }: {
   comment: QaComment | null;
   isLoading: boolean;
@@ -2112,10 +2140,20 @@ function CommentInspector({
   onSaveEdit: () => void;
   onEditedBodyChange: (value: string) => void;
   onEditedPriorityChange: (value: QaComment["priority"]) => void;
-  canComplete: boolean;
-  onTransition: () => void;
-  onComplete: () => void;
+  canRequestReview: boolean;
+  canConfirm: boolean;
+  onStartWork: () => void;
+  onRequestReview: () => void;
+  onConfirm: () => void;
+  onReopen: (note: string) => void;
 }) {
+  const [isReopenFormOpen, setIsReopenFormOpen] = useState(false);
+  const [reopenNote, setReopenNote] = useState("");
+
+  useEffect(() => {
+    setIsReopenFormOpen(false);
+    setReopenNote("");
+  }, [comment?.id, comment?.status]);
   if (isLoading)
     return <div className="inspector-empty">코멘트를 불러오는 중…</div>;
   if (error) return <div className="inspector-empty">{error}</div>;
@@ -2126,7 +2164,6 @@ function CommentInspector({
         <br />핀 또는 영역 도구로 첫 코멘트를 남겨보세요.
       </div>
     );
-  const next = nextStatus[comment.status];
   const authorName = commentAuthorName(comment.author, "알 수 없음");
   const query = new URLSearchParams({
     comment: comment.id,
@@ -2244,30 +2281,58 @@ function CommentInspector({
           <ArrowSquareOut /> 이 코멘트 검수 화면 열기
         </button>
       </section>
-      {canComplete && (
-        <div className="thread-actions">
-          {comment.status !== "done" && (
-            <button
-              className="advance"
-              type="button"
-              disabled={isTransitioning}
-              onClick={onComplete}
-            >
-              {isTransitioning ? "처리 중…" : "완료 처리"}
+      <section className="comment-activity">
+        <SectionTitle label="작업 기록" count={`${comment.events.length + 1}`} />
+        <ol>
+          <li>
+            <b>{authorName}</b>
+            <span>의견 작성</span>
+            <time>{relativeTime(comment.created_at)}</time>
+          </li>
+          {comment.events.map((event) => (
+            <li key={event.id}>
+              <b>{commentAuthorName(event.actor, "팀원")}</b>
+              <span>{eventLabel(event)}</span>
+              <time>{relativeTime(event.created_at)}</time>
+              {event.payload_json?.note && <small>{event.payload_json.note}</small>}
+            </li>
+          ))}
+        </ol>
+      </section>
+      <div className="thread-actions">
+        {comment.status === "open" && canRequestReview && (
+          <button className="advance" type="button" disabled={isTransitioning} onClick={onStartWork}>
+            {isTransitioning ? "처리 중…" : "작업 시작"}
+          </button>
+        )}
+        {comment.status === "in_progress" && canRequestReview && (
+          <button className="advance" type="button" disabled={isTransitioning} onClick={onRequestReview}>
+            {isTransitioning ? "처리 중…" : "수정 완료 · 검토 요청"}
+          </button>
+        )}
+        {comment.status === "review_requested" && canConfirm && !isReopenFormOpen && (
+          <>
+            <p className="review-request-hint">수정이 반영되었어요. 실제 화면을 확인해 주세요.</p>
+            <button className="advance" type="button" disabled={isTransitioning} onClick={onConfirm}>
+              {isTransitioning ? "처리 중…" : "확인 완료"}
             </button>
-          )}
-          {comment.status === "done" && (
-            <button
-              className="reopen"
-              type="button"
-              disabled={isTransitioning}
-              onClick={onTransition}
-            >
-              {isTransitioning ? "처리 중…" : "재오픈"}
-            </button>
-          )}
-        </div>
-      )}
+            <button className="reopen" type="button" disabled={isTransitioning} onClick={() => setIsReopenFormOpen(true)}>다시 수정 요청</button>
+          </>
+        )}
+        {(comment.status === "done" && canConfirm) && !isReopenFormOpen && (
+          <button className="reopen" type="button" disabled={isTransitioning} onClick={() => setIsReopenFormOpen(true)}>다시 수정 요청</button>
+        )}
+        {isReopenFormOpen && (
+          <div className="reopen-form">
+            <label htmlFor="reopen-note">다시 확인이 필요한 이유</label>
+            <textarea id="reopen-note" value={reopenNote} onChange={(event) => setReopenNote(event.target.value)} placeholder="예: 모바일 400px 화면에서는 메뉴 간격이 여전히 좁아요." />
+            <div>
+              <button type="button" onClick={() => { setIsReopenFormOpen(false); setReopenNote(""); }} disabled={isTransitioning}>취소</button>
+              <button className="advance" type="button" onClick={() => onReopen(reopenNote.trim())} disabled={isTransitioning || !reopenNote.trim()}>{isTransitioning ? "처리 중…" : "다시 수정 요청"}</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
