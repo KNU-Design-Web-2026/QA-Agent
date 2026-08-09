@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
 
-const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]) });
+const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]), reviewerIds: z.array(z.string().uuid()).max(10).default([]) });
 const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional() });
 const editSchema = z.object({ action: z.literal("edit"), commentId: z.string().uuid(), body: z.string().trim().min(1).max(5000), priority: z.enum(["low", "medium", "high", "blocker"]) });
 
@@ -89,10 +89,28 @@ export async function POST(request: Request) {
   try {
     const input = inputSchema.parse(await request.json());
     const { supabase, project, deployment } = await findProjectAndDeployment(input.projectSlug, input.deploymentUrl);
+    if (input.reviewerIds.length && session.role !== "admin")
+      return NextResponse.json({ error: "검토 요청 대상은 관리자만 지정할 수 있습니다." }, { status: 403 });
+    if (input.reviewerIds.length) {
+      const { data: reviewers } = await supabase
+        .from("memberships")
+        .select("user_id")
+        .eq("organization_id", project.organization_id)
+        .eq("role", "designer")
+        .in("user_id", input.reviewerIds);
+      if ((reviewers ?? []).length !== input.reviewerIds.length)
+        throw new Error("검토 요청 대상에 등록되지 않은 디자이너가 있습니다.");
+    }
     const { data: comment, error: commentError } = await supabase.from("qa_comments").insert({ project_id: project.id, deployment_id: deployment.id, author_id: session.userId, body: input.body, type: input.type, priority: input.priority, pathname: input.pathname, query_string: "", viewport_width: input.viewportWidth, viewport_height: input.viewportHeight, device_scale_factor: input.deviceScaleFactor, zoom: input.zoom, scroll_x: 0, scroll_y: 0, element_qa_id: null, selector_hint_json: {}, normalized_anchor_json: input.anchor }).select("id").single();
     if (commentError || !comment) throw new Error("코멘트를 저장하지 못했습니다.");
     const { error: annotationError } = await supabase.from("annotations").insert({ qa_comment_id: comment.id, kind: input.kind === "area" ? "rect" : "pin", geometry_json: input.anchor, style_json: { color: "yellow" } });
     if (annotationError) throw new Error("코멘트 위치를 저장하지 못했습니다.");
+    if (input.reviewerIds.length) {
+      const { error: recipientsError } = await supabase.from("qa_review_recipients").insert(
+        input.reviewerIds.map((reviewerId) => ({ qa_comment_id: comment.id, reviewer_id: reviewerId, requested_by: session.userId })),
+      );
+      if (recipientsError) throw new Error("검토 요청 대상을 저장하지 못했습니다.");
+    }
     await notifyAdmins(supabase, project.organization_id, comment.id, "comment_created", session.userId);
     return NextResponse.json({ id: comment.id });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트를 저장하지 못했습니다." }, { status: 400 }); }
@@ -142,8 +160,19 @@ export async function PATCH(request: Request) {
     if (currentCommentError || !currentComment) throw new Error("코멘트를 찾을 수 없습니다.");
     const { data, error } = await supabase.rpc("transition_qa_comment_as_actor", { comment_id: input.commentId, next_status: input.nextStatus, actor_id: session.userId, note: input.note ?? null });
     if (error || !data) throw new Error(error?.message ?? "상태를 변경하지 못했습니다.");
-    if (input.nextStatus === "review_requested" && currentComment.author_id !== session.userId)
-      await supabase.from("notifications").insert({ user_id: currentComment.author_id, qa_comment_id: input.commentId, kind: "review_requested" });
+    if (input.nextStatus === "review_requested") {
+      const { data: requestedReviewers } = await supabase
+        .from("qa_review_recipients")
+        .select("reviewer_id")
+        .eq("qa_comment_id", input.commentId);
+      const recipients = (requestedReviewers ?? []).map((reviewer) => reviewer.reviewer_id);
+      const fallbackRecipients = recipients.length ? recipients : [currentComment.author_id];
+      const uniqueRecipients = [...new Set(fallbackRecipients)].filter((userId) => userId !== session.userId);
+      if (uniqueRecipients.length)
+        await supabase.from("notifications").insert(
+          uniqueRecipients.map((userId) => ({ user_id: userId, qa_comment_id: input.commentId, kind: "review_requested" })),
+        );
+    }
     const isReopened =
       (currentComment.status === "review_requested" && input.nextStatus === "in_progress") ||
       (currentComment.status === "done" && input.nextStatus === "open");
