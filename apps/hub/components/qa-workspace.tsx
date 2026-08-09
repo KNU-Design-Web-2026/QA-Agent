@@ -1920,11 +1920,13 @@ function CommentListItem({
       </span>
       <span className="comment-list-item__content">
         <b>{comment.body}</b>
-        <small>{authorName}</small>
+        <small>
+          {authorName} <i>·</i>{" "}
+          <strong className={`comment-list-item__status is-${comment.status}`}>
+            {statusLabel[comment.status]}
+          </strong>
+        </small>
       </span>
-      <em className={`comment-list-item__status is-${comment.status}`}>
-        {statusLabel[comment.status]}
-      </em>
     </button>
   );
 }
