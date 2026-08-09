@@ -70,6 +70,7 @@ type QaComment = {
     created_at: string;
     actor: { display_name: string | null; email: string } | null;
   }>;
+  reviewers: Array<{ display_name: string | null; email: string }>;
 };
 type QaNotification = {
   id: string;
@@ -1464,12 +1465,17 @@ export function QaWorkspace({
               accessSession?.role === "admin" ||
               accessSession?.role === "developer"
             }
-            canConfirm={
+            canConfirm={Boolean(
               accessSession?.role === "admin" ||
               (Boolean(accessSession?.email) &&
-                selectedComment?.author?.email.toLowerCase() ===
-                  accessSession?.email.toLowerCase())
-            }
+                (selectedComment?.author?.email.toLowerCase() ===
+                  accessSession?.email.toLowerCase() ||
+                  selectedComment?.reviewers.some(
+                    (reviewer) =>
+                      reviewer.email.toLowerCase() ===
+                      accessSession?.email.toLowerCase(),
+                  ))),
+            )}
             onStartWork={() => void updateCommentStatus("in_progress")}
             onRequestReview={() =>
               void updateCommentStatus("review_requested")
