@@ -921,7 +921,11 @@ export function QaWorkspace({
               className="toolbar-menu__trigger"
               type="button"
               aria-expanded={isManagementMenuOpen}
-              onClick={() => setIsManagementMenuOpen((current) => !current)}
+              onClick={() => {
+                setIsManagementMenuOpen((current) => !current);
+                setIsNotificationOpen(false);
+                setIsProfileMenuOpen(false);
+              }}
             >
               검수 관리 <CaretDown />
             </button>
@@ -952,6 +956,8 @@ export function QaWorkspace({
               aria-expanded={isNotificationOpen}
               onClick={() => {
                 setIsNotificationOpen((current) => !current);
+                setIsManagementMenuOpen(false);
+                setIsProfileMenuOpen(false);
                 void loadNotifications();
               }}
             >
@@ -972,7 +978,11 @@ export function QaWorkspace({
               type="button"
               title={accessSession?.email}
               aria-expanded={isProfileMenuOpen}
-              onClick={() => setIsProfileMenuOpen((current) => !current)}
+              onClick={() => {
+                setIsProfileMenuOpen((current) => !current);
+                setIsManagementMenuOpen(false);
+                setIsNotificationOpen(false);
+              }}
             >
               <b>{accessSession?.displayName ?? "사용자"}</b>
               <CaretDown />
