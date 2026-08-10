@@ -217,6 +217,9 @@
 .tutorial-replay-button:hover { border-color: var(--yellow); color: var(--yellow); }
 .qa-list-button { height: 26px; padding: 0 9px; border: 1px solid #3b3b38; border-radius: 6px; background: transparent; color: #ededed; font-size: 10.5px; font-weight: 700; }
 .qa-list-button:hover { border-color: var(--yellow); color: var(--yellow); }
+.qa-version-update { min-height: 48px; padding: 7px 14px; border-bottom: 1px solid #d6bd39; background: #fff7c8; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #111; }
+.qa-version-update strong { display: block; font-size: 11px; font-weight: 800; }.qa-version-update span { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: #6d6550; font-size: 9.5px; }.qa-version-update code { color: #333330; font-size: 9.5px; }.qa-version-update span i { color: #a37d00; font-style: normal; }
+.qa-version-update__actions { display: flex; align-items: center; gap: 7px; }.qa-version-update__actions button { height: 29px; padding: 0 10px; border-radius: 5px; font-size: 10.5px; font-weight: 800; }.qa-version-update__actions .later { border: 0; background: transparent; color: #65605a; }.qa-version-update__actions .later:hover { color: #111; text-decoration: underline; }.qa-version-update__actions .go { border: 1px solid #111; background: #111; color: #fff; }.qa-version-update__actions .go:hover { background: #fff; color: #111; }
 .toolbar-menu { position: relative; }
 .toolbar-menu__trigger { height: 26px; padding: 0 8px 0 9px; border: 1px solid #3b3b38; border-radius: 6px; background: transparent; display: inline-flex; align-items: center; gap: 5px; color: #ededed; font-size: 10.5px; font-weight: 700; }
 .toolbar-menu__trigger:hover, .toolbar-menu__trigger[aria-expanded="true"] { border-color: var(--yellow); color: var(--yellow); }.toolbar-menu__trigger svg { width: 11px; height: 11px; }

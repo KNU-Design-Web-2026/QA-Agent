@@ -241,6 +241,11 @@ export function QaWorkspace({
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("deployment");
   });
+  const [activeDeploymentId, setActiveDeploymentId] = useState<string | null>(
+    null,
+  );
+  const [dismissedActiveDeploymentId, setDismissedActiveDeploymentId] =
+    useState<string | null>(null);
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isRegisteringDeployment, setIsRegisteringDeployment] = useState(false);
@@ -275,12 +280,20 @@ export function QaWorkspace({
   ).replace(/\/$/, "");
   const selectedDeployment =
     deployments.find((item) => item.id === selectedDeploymentId) ?? null;
+  const activeDeployment =
+    deployments.find((item) => item.id === activeDeploymentId) ?? null;
   const actualUrl = selectedDeployment?.immutable_url ?? fallbackDeploymentUrl;
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
   const selectedComment =
     comments.find((comment) => comment.id === selectedCommentId) ??
     comments[0] ??
     null;
+  const shouldShowVersionUpdate =
+    accessSession?.role !== "admin" &&
+    Boolean(activeDeployment) &&
+    Boolean(selectedDeployment) &&
+    activeDeployment?.id !== selectedDeployment?.id &&
+    activeDeployment?.id !== dismissedActiveDeploymentId;
 
   const openOriginalSize = () =>
     window.open(
@@ -327,6 +340,7 @@ export function QaWorkspace({
         );
       const nextDeployments = result.deployments ?? [];
       setDeployments(nextDeployments);
+      setActiveDeploymentId(result.activeDeploymentId ?? null);
       setSelectedDeploymentId((current) =>
         nextDeployments.some((deployment: DeploymentInfo) => deployment.id === current)
           ? current
@@ -340,6 +354,7 @@ export function QaWorkspace({
       );
       setDeployments([]);
       setSelectedDeploymentId(null);
+      setActiveDeploymentId(null);
     }
   }, [projectSlug]);
 
@@ -496,6 +511,8 @@ export function QaWorkspace({
 
   useEffect(() => {
     void loadDeployments();
+    const timer = window.setInterval(() => void loadDeployments(), 30_000);
+    return () => window.clearInterval(timer);
   }, [loadDeployments]);
   useEffect(() => {
     let isMounted = true;
@@ -1041,6 +1058,40 @@ export function QaWorkspace({
           </div>
         </div>
       </header>
+      {shouldShowVersionUpdate && activeDeployment && selectedDeployment && (
+        <div className="qa-version-update" role="status">
+          <div>
+            <strong>새 검수 버전이 준비되었어요</strong>
+            <span>
+              <code>{selectedDeployment.git_sha.slice(0, 7)}</code>
+              <i>→</i>
+              <code>{activeDeployment.git_sha.slice(0, 7)}</code>
+            </span>
+          </div>
+          <div className="qa-version-update__actions">
+            <button
+              className="later"
+              type="button"
+              onClick={() =>
+                setDismissedActiveDeploymentId(activeDeployment.id)
+              }
+            >
+              나중에
+            </button>
+            <button
+              className="go"
+              type="button"
+              onClick={() => {
+                setSelectedDeploymentId(activeDeployment.id);
+                setSelectedCommentId(null);
+                setDismissedActiveDeploymentId(activeDeployment.id);
+              }}
+            >
+              새 검수 버전 보기
+            </button>
+          </div>
+        </div>
+      )}
       {comingSoon && (
         <div className="tool-modal-backdrop">
           <section
