@@ -4,6 +4,9 @@ import "./styles.css";
 export const metadata: Metadata = {
   title: "KNUD Design QA Hub",
   description: "Reproducible visual QA for KNUD deployments",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
