@@ -50,13 +50,23 @@ export async function POST(request: Request) {
     const { data: project, error: projectError } = await supabase.from("projects").select("id, qa_active_deployment_id").eq("slug", input.projectSlug).single();
     if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
     const productionAlias = (process.env.NEXT_PUBLIC_KNUD_DEPLOYMENT_URL ?? "").replace(/\/$/, "") || null;
+    const normalizedImmutableUrl = input.immutableUrl.replace(/\/$/, "");
+    const { data: existingDeployment, error: existingDeploymentError } =
+      await supabase
+        .from("deployments")
+        .select("id")
+        .eq("project_id", project.id)
+        .eq("immutable_url", normalizedImmutableUrl)
+        .maybeSingle();
+    if (existingDeploymentError)
+      throw new Error("기존 배포 버전을 확인하지 못했습니다.");
     const { data, error } = await supabase
       .from("deployments")
       .upsert({
         project_id: project.id,
         provider: "vercel",
         provider_deployment_id: input.providerDeploymentId,
-        immutable_url: input.immutableUrl.replace(/\/$/, ""),
+        immutable_url: normalizedImmutableUrl,
         production_alias: productionAlias,
         git_sha: input.gitSha,
         git_ref: input.gitRef,
@@ -66,11 +76,19 @@ export async function POST(request: Request) {
       .select("id, immutable_url, production_alias, git_sha, git_ref, provider_deployment_id, deployed_at, created_at")
       .single();
     if (error || !data) throw new Error(error?.message ?? "배포 버전을 등록하지 못했습니다.");
-    if (!project.qa_active_deployment_id) {
+    if (!existingDeployment) {
       const { error: activateError } = await supabase.from("projects").update({ qa_active_deployment_id: data.id }).eq("id", project.id);
-      if (activateError) throw new Error("첫 QA 기준 버전을 설정하지 못했습니다.");
+      if (activateError) throw new Error("최신 QA 기준 버전을 설정하지 못했습니다.");
     }
-    return NextResponse.json({ deployment: data }, { status: 201 });
+    return NextResponse.json(
+      {
+        deployment: data,
+        activeDeploymentId: existingDeployment
+          ? project.qa_active_deployment_id
+          : data.id,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "배포 버전을 등록하지 못했습니다." }, { status: 400 });
   }

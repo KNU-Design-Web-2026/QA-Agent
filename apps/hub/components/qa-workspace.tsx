@@ -246,6 +246,8 @@ export function QaWorkspace({
   );
   const [dismissedActiveDeploymentId, setDismissedActiveDeploymentId] =
     useState<string | null>(null);
+  const [adminDeploymentNotice, setAdminDeploymentNotice] =
+    useState<DeploymentInfo | null>(null);
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isRegisteringDeployment, setIsRegisteringDeployment] = useState(false);
@@ -268,6 +270,9 @@ export function QaWorkspace({
   const [tutorialStep, setTutorialStep] = useState(0);
   const canvasRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<Draft | null>(null);
+  const previousActiveDeploymentIdRef = useRef<string | null | undefined>(
+    undefined,
+  );
   const currentViewport = viewports[selectedViewport] ?? {
     width: 1020,
     height: 1370,
@@ -339,13 +344,36 @@ export function QaWorkspace({
           result.error ?? "배포 버전 목록을 불러오지 못했습니다.",
         );
       const nextDeployments = result.deployments ?? [];
-      setDeployments(nextDeployments);
-      setActiveDeploymentId(result.activeDeploymentId ?? null);
-      setSelectedDeploymentId((current) =>
-        nextDeployments.some((deployment: DeploymentInfo) => deployment.id === current)
-          ? current
-          : (result.activeDeploymentId ?? nextDeployments[0]?.id ?? null),
+      const nextActiveDeploymentId = result.activeDeploymentId ?? null;
+      const previousActiveDeploymentId =
+        previousActiveDeploymentIdRef.current;
+      const nextActiveDeployment = nextDeployments.find(
+        (deployment: DeploymentInfo) => deployment.id === nextActiveDeploymentId,
       );
+      setDeployments(nextDeployments);
+      setActiveDeploymentId(nextActiveDeploymentId);
+      previousActiveDeploymentIdRef.current = nextActiveDeploymentId;
+
+      if (accessSession?.role === "admin") {
+        setSelectedDeploymentId(
+          nextActiveDeploymentId ?? nextDeployments[0]?.id ?? null,
+        );
+        if (
+          previousActiveDeploymentId !== undefined &&
+          previousActiveDeploymentId !== nextActiveDeploymentId &&
+          nextActiveDeployment
+        ) {
+          setAdminDeploymentNotice(nextActiveDeployment);
+        }
+      } else {
+        setSelectedDeploymentId((current) =>
+          nextDeployments.some(
+            (deployment: DeploymentInfo) => deployment.id === current,
+          )
+            ? current
+            : (nextActiveDeploymentId ?? nextDeployments[0]?.id ?? null),
+        );
+      }
     } catch (error) {
       setDeploymentsError(
         error instanceof Error
@@ -356,7 +384,7 @@ export function QaWorkspace({
       setSelectedDeploymentId(null);
       setActiveDeploymentId(null);
     }
-  }, [projectSlug]);
+  }, [accessSession?.role, projectSlug]);
 
   const loadComments = useCallback(async () => {
     if (!selectedDeployment) {
@@ -1000,8 +1028,8 @@ export function QaWorkspace({
                 </button>
                 {accessSession?.role === "admin" && (
                   <button type="button" onClick={() => { setIsManagementMenuOpen(false); setIsDeploymentModalOpen(true); }}>
-                    <span>새 버전 등록</span>
-                    <small>검수 기준 버전 추가</small>
+                    <span>최신 버전 등록</span>
+                    <small>등록 후 바로 검수 기준 전환</small>
                   </button>
                 )}
               </div>
@@ -1092,6 +1120,25 @@ export function QaWorkspace({
           </div>
         </div>
       )}
+      {accessSession?.role === "admin" && adminDeploymentNotice && (
+        <div className="qa-version-update qa-version-update--admin" role="status">
+          <div>
+            <strong>최신 검수 버전으로 전환했어요</strong>
+            <span>
+              현재 기준 SHA <code>{adminDeploymentNotice.git_sha.slice(0, 7)}</code>
+            </span>
+          </div>
+          <div className="qa-version-update__actions">
+            <button
+              className="later"
+              type="button"
+              onClick={() => setAdminDeploymentNotice(null)}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
       {comingSoon && (
         <div className="tool-modal-backdrop">
           <section
@@ -1113,10 +1160,10 @@ export function QaWorkspace({
         <div className="tool-modal-backdrop">
           <form className="deployment-modal" onSubmit={registerDeployment}>
             <span className="tool-notice__eyebrow">DEPLOYMENT RECORD</span>
-            <h2>새 배포 버전 등록</h2>
+            <h2>최신 배포 버전 등록</h2>
             <p>
               Vercel 배포 상세에서 고유 URL, Deployment ID, Git SHA를 복사해
-              입력하세요.
+              입력하세요. 등록하면 이 버전이 바로 팀의 최신 검수 기준이 됩니다.
             </p>
             <label>
               고유 Deployment URL
