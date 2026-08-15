@@ -102,7 +102,7 @@ type MarkerPreview = {
   comment: QaComment;
   x: number;
   y: number;
-  side: "left" | "right";
+  placement: "left" | "right" | "top" | "bottom";
 };
 type TutorialSpotlight = {
   top: number;
@@ -1239,7 +1239,7 @@ export function QaWorkspace({
                 className="save"
                 disabled={isRegisteringDeployment}
               >
-                {isRegisteringDeployment ? "등록 중…" : "버전 등록"}
+                {isRegisteringDeployment ? "등록 중…" : "등록하고 검수 시작"}
               </button>
             </footer>
           </form>
@@ -1671,6 +1671,27 @@ function commentAuthorName(author: QaComment["author"], fallback = "익명") {
   const name =
     author?.display_name?.trim() || author?.email?.split("@")[0] || fallback;
   return /^[가-힣]{3}$/.test(name) ? name.slice(1) : name;
+}
+
+function getAreaGeometry(
+  comment: QaComment,
+  viewport: { width: number; height: number },
+  zoom: number,
+) {
+  const annotation = comment.annotations.find((item) => item.kind === "rect");
+  if (!annotation) return null;
+  const geometry = annotation.geometry_json;
+  const x = typeof geometry.x === "number" ? geometry.x : 0;
+  const y = typeof geometry.y === "number" ? geometry.y : 0;
+  const width = typeof geometry.width === "number" ? geometry.width : 0;
+  const height = typeof geometry.height === "number" ? geometry.height : 0;
+  if (width <= 0 || height <= 0) return null;
+  return {
+    x: x * viewport.width * zoom,
+    y: y * viewport.height * zoom,
+    width: width * viewport.width * zoom,
+    height: height * viewport.height * zoom,
+  };
 }
 
 const notificationCopy: Record<QaNotification["kind"], string> = {
@@ -2223,19 +2244,39 @@ function SavedAnnotation({
   const authorName = commentAuthorName(comment.author);
   const markerX = x * viewport.width * zoom;
   const markerY = y * viewport.height * zoom;
+  const area = getAreaGeometry(comment, viewport, zoom);
+  const tooltipWidth = 300;
+  const tooltipHeight = 104;
+  const viewportWidth = viewport.width * zoom;
+  const viewportHeight = viewport.height * zoom;
+
+  const tooltipPoint = () => {
+    if (area) {
+      const centerX = Math.min(
+        viewportWidth - tooltipWidth / 2 - 12,
+        Math.max(tooltipWidth / 2 + 12, area.x + area.width / 2),
+      );
+      if (area.y + area.height + tooltipHeight + 20 <= viewportHeight) {
+        return { x: centerX, y: area.y + area.height, placement: "bottom" as const };
+      }
+      if (area.y - tooltipHeight - 20 >= 0) {
+        return { x: centerX, y: area.y, placement: "top" as const };
+      }
+    }
+    return {
+      x: markerX,
+      y: markerY,
+      placement:
+        markerX > viewportWidth - tooltipWidth - 36 ? ("left" as const) : ("right" as const),
+    };
+  };
   return (
     <button
       className={`saved-pin saved-pin--${comment.status === "done" ? "done" : "open"}`}
       type="button"
       style={{ left: `${markerX}px`, top: `${markerY}px` }}
       onClick={onClick}
-      onMouseEnter={() =>
-        onHover({
-          x: markerX,
-          y: markerY,
-          side: markerX > viewport.width * zoom - 320 ? "left" : "right",
-        })
-      }
+      onMouseEnter={() => onHover(tooltipPoint())}
       onMouseLeave={onLeave}
       aria-label={`${authorName}의 코멘트 ${number} 열기`}
     >
@@ -2248,7 +2289,7 @@ function MarkerTooltip({ preview }: { preview: MarkerPreview }) {
   const authorName = commentAuthorName(preview.comment.author);
   return (
     <aside
-      className={`marker-tooltip marker-tooltip--${preview.side}`}
+      className={`marker-tooltip marker-tooltip--${preview.placement}`}
       style={{ left: preview.x, top: 58 + preview.y }}
     >
       <span className="marker-tooltip__avatar">{authorName}</span>
@@ -2272,22 +2313,16 @@ function SavedAreaPreview({
   zoom: number;
   viewport: { width: number; height: number };
 }) {
-  const annotation = comment.annotations.find((item) => item.kind === "rect");
-  if (!annotation) return null;
-  const geometry = annotation.geometry_json;
-  const x = typeof geometry.x === "number" ? geometry.x : 0;
-  const y = typeof geometry.y === "number" ? geometry.y : 0;
-  const width = typeof geometry.width === "number" ? geometry.width : 0;
-  const height = typeof geometry.height === "number" ? geometry.height : 0;
-  if (width <= 0 || height <= 0) return null;
+  const area = getAreaGeometry(comment, viewport, zoom);
+  if (!area) return null;
   return (
     <div
       className="saved-area-preview"
       style={{
-        left: x * viewport.width * zoom,
-        top: y * viewport.height * zoom,
-        width: width * viewport.width * zoom,
-        height: height * viewport.height * zoom,
+        left: area.x,
+        top: area.y,
+        width: area.width,
+        height: area.height,
       }}
     >
       <span>선택 영역</span>
