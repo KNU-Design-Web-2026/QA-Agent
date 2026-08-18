@@ -25,6 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQaAccessSession } from "@/components/auth-gate";
+import { getDeploymentView } from "@/lib/deployment-view";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -244,8 +245,6 @@ export function QaWorkspace({
   const [activeDeploymentId, setActiveDeploymentId] = useState<string | null>(
     null,
   );
-  const [dismissedActiveDeploymentId, setDismissedActiveDeploymentId] =
-    useState<string | null>(null);
   const [adminDeploymentNotice, setAdminDeploymentNotice] =
     useState<DeploymentInfo | null>(null);
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
@@ -287,6 +286,11 @@ export function QaWorkspace({
     deployments.find((item) => item.id === selectedDeploymentId) ?? null;
   const activeDeployment =
     deployments.find((item) => item.id === activeDeploymentId) ?? null;
+  const deploymentView = getDeploymentView(
+    selectedDeploymentId,
+    activeDeploymentId,
+  );
+  const isPastDeployment = deploymentView === "past";
   const actualUrl = selectedDeployment?.immutable_url ?? fallbackDeploymentUrl;
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
   const selectedComment =
@@ -297,8 +301,7 @@ export function QaWorkspace({
     accessSession?.role !== "admin" &&
     Boolean(activeDeployment) &&
     Boolean(selectedDeployment) &&
-    activeDeployment?.id !== selectedDeployment?.id &&
-    activeDeployment?.id !== dismissedActiveDeploymentId;
+    isPastDeployment;
 
   const openOriginalSize = () =>
     window.open(
@@ -1087,35 +1090,25 @@ export function QaWorkspace({
         </div>
       </header>
       {shouldShowVersionUpdate && activeDeployment && selectedDeployment && (
-        <div className="qa-version-update" role="status">
+        <div className="qa-version-update qa-version-update--past" role="status">
           <div>
-            <strong>새 검수 버전이 준비되었어요</strong>
+            <strong>과거 검수 버전을 보고 있어요</strong>
             <span>
-              <code>{selectedDeployment.git_sha.slice(0, 7)}</code>
-              <i>→</i>
-              <code>{activeDeployment.git_sha.slice(0, 7)}</code>
+              보고 있는 버전 <code>{selectedDeployment.git_sha.slice(0, 7)}</code>
+              <i>·</i>
+              현재 기준 <code>{activeDeployment.git_sha.slice(0, 7)}</code>
             </span>
           </div>
           <div className="qa-version-update__actions">
-            <button
-              className="later"
-              type="button"
-              onClick={() =>
-                setDismissedActiveDeploymentId(activeDeployment.id)
-              }
-            >
-              나중에
-            </button>
             <button
               className="go"
               type="button"
               onClick={() => {
                 setSelectedDeploymentId(activeDeployment.id);
                 setSelectedCommentId(null);
-                setDismissedActiveDeploymentId(activeDeployment.id);
               }}
             >
-              새 검수 버전 보기
+              현재 검수 버전으로 돌아가기
             </button>
           </div>
         </div>
@@ -1452,6 +1445,7 @@ export function QaWorkspace({
                       zoom={zoom}
                       viewport={currentViewport}
                       canvasHeight={Math.round(currentViewport.height * zoom)}
+                      deploymentSha={deploymentLabel}
                       priority={priority}
                       setPriority={setPriority}
                       showReviewerTarget={accessSession?.role === "admin"}
@@ -2339,6 +2333,7 @@ function CommentComposer({
   zoom,
   viewport,
   canvasHeight,
+  deploymentSha,
   priority,
   setPriority,
   showReviewerTarget,
@@ -2356,6 +2351,7 @@ function CommentComposer({
   zoom: number;
   viewport: { width: number; height: number };
   canvasHeight: number;
+  deploymentSha: string;
   priority: QaComment["priority"];
   setPriority: (value: QaComment["priority"]) => void;
   showReviewerTarget: boolean;
@@ -2385,7 +2381,9 @@ function CommentComposer({
       <header>
         <span className="avatar yellow">QA</span>
         <strong>여기에 코멘트 남기기</strong>
-        <code>{draft.kind === "area" ? "선택 영역" : "핀 위치"}</code>
+        <code>
+          {draft.kind === "area" ? "선택 영역" : "핀 위치"} · {deploymentSha}
+        </code>
       </header>
       <textarea
         autoFocus
