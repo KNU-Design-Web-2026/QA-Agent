@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       deploymentIds.length
         ? supabase
             .from("deployments")
-            .select("id, immutable_url, git_sha, deployed_at")
+            .select("id, immutable_url, git_sha, version_name, change_summary, deployed_at")
             .in("id", deploymentIds)
         : Promise.resolve({ data: [] }),
       authorIds.length

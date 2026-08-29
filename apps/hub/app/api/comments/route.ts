@@ -17,7 +17,7 @@ async function findProjectAndDeployment(projectSlug: string, deploymentUrl: stri
   const supabase = createAdminClient();
   const { data: project, error: projectError } = await supabase.from("projects").select("id, organization_id").eq("slug", projectSlug).single();
   if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
-  const { data: deployment, error: deploymentError } = await supabase.from("deployments").select("id, git_sha, deployed_at").eq("project_id", project.id).eq("immutable_url", deploymentUrl).single();
+  const { data: deployment, error: deploymentError } = await supabase.from("deployments").select("id, git_sha, version_name, change_summary, deployed_at").eq("project_id", project.id).eq("immutable_url", deploymentUrl).single();
   if (deploymentError || !deployment) throw new Error("현재 배포본이 아직 QA 프로젝트에 등록되지 않았습니다.");
   return { supabase, project, deployment };
 }
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
     const { data: reviewDeployments } = reviewDeploymentIds.length
       ? await supabase
           .from("deployments")
-          .select("id, immutable_url, git_sha, deployed_at")
+          .select("id, immutable_url, git_sha, version_name, change_summary, deployed_at")
           .in("id", reviewDeploymentIds)
       : { data: [] };
     const reviewDeploymentById = new Map(
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
     for (const event of events ?? []) eventsByComment.set(event.qa_comment_id, [...(eventsByComment.get(event.qa_comment_id) ?? []), { ...event, actor: event.actor_id ? authorById.get(event.actor_id) ?? null : null }]);
     const reviewersByComment = new Map<string, unknown[]>();
     for (const recipient of reviewRecipients ?? []) reviewersByComment.set(recipient.qa_comment_id, [...(reviewersByComment.get(recipient.qa_comment_id) ?? []), authorById.get(recipient.reviewer_id) ?? null].filter(Boolean));
-    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, reviewDeployment: row.review_deployment_id ? reviewDeploymentById.get(row.review_deployment_id) ?? null : null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [], reviewers: reviewersByComment.get(row.id) ?? [] })) });
+    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, versionName: deployment.version_name, changeSummary: deployment.change_summary, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, reviewDeployment: row.review_deployment_id ? reviewDeploymentById.get(row.review_deployment_id) ?? null : null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [], reviewers: reviewersByComment.get(row.id) ?? [] })) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트 목록을 불러오지 못했습니다." }, { status: 400 });
   }

@@ -10,6 +10,8 @@ const deploymentSchema = z.object({
   providerDeploymentId: z.string().min(3),
   gitSha: z.string().min(7),
   gitRef: z.string().min(1).default("main"),
+  versionName: z.string().trim().min(1).max(80),
+  changeSummary: z.string().trim().max(500).optional().default(""),
   deployedAt: z.string().datetime().optional(),
 });
 const activateSchema = z.object({ projectSlug: z.string().min(1), deploymentId: z.string().uuid() });
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
     if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
     const { data, error } = await supabase
       .from("deployments")
-      .select("id, immutable_url, production_alias, git_sha, git_ref, provider_deployment_id, deployed_at, created_at")
+      .select("id, immutable_url, production_alias, git_sha, git_ref, version_name, change_summary, provider_deployment_id, deployed_at, created_at")
       .eq("project_id", project.id)
       .eq("state", "ready")
       .order("deployed_at", { ascending: false, nullsFirst: false })
@@ -71,10 +73,12 @@ export async function POST(request: Request) {
         production_alias: productionAlias,
         git_sha: input.gitSha,
         git_ref: input.gitRef,
+        version_name: input.versionName,
+        change_summary: input.changeSummary || null,
         deployed_at: input.deployedAt ?? new Date().toISOString(),
         state: "ready",
       }, { onConflict: "project_id,immutable_url" })
-      .select("id, immutable_url, production_alias, git_sha, git_ref, provider_deployment_id, deployed_at, created_at")
+      .select("id, immutable_url, production_alias, git_sha, git_ref, version_name, change_summary, provider_deployment_id, deployed_at, created_at")
       .single();
     if (error || !data) throw new Error(error?.message ?? "배포 버전을 등록하지 못했습니다.");
     if (shouldActivateRegisteredDeployment(Boolean(existingDeployment))) {

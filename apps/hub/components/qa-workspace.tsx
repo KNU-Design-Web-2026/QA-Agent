@@ -25,6 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQaAccessSession } from "@/components/auth-gate";
+import { getDeploymentLabel } from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
 import { getReviewScreen } from "@/lib/review-screen";
 
@@ -106,6 +107,8 @@ type DeploymentInfo = {
   production_alias: string | null;
   git_sha: string;
   git_ref: string | null;
+  version_name: string | null;
+  change_summary: string | null;
   provider_deployment_id: string;
   deployed_at: string | null;
   created_at: string;
@@ -272,6 +275,8 @@ export function QaWorkspace({
     providerDeploymentId: "",
     gitSha: "",
     gitRef: "main",
+    versionName: "",
+    changeSummary: "",
   });
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -703,8 +708,8 @@ export function QaWorkspace({
   };
 
   const scaleLabel = `${Math.round(zoom * 100)}%`;
-  const deploymentLabel = selectedDeployment?.git_sha
-    ? selectedDeployment.git_sha.slice(0, 7)
+  const deploymentLabel = selectedDeployment
+    ? getDeploymentLabel(selectedDeployment)
     : "버전 미선택";
   const deployedLabel = selectedDeployment?.deployed_at
     ? relativeTime(selectedDeployment.deployed_at)
@@ -801,6 +806,8 @@ export function QaWorkspace({
         providerDeploymentId: "",
         gitSha: "",
         gitRef: "main",
+        versionName: "",
+        changeSummary: "",
       });
       setIsDeploymentModalOpen(false);
     } catch (error) {
@@ -1072,7 +1079,7 @@ export function QaWorkspace({
                 <option value="">배포 버전 선택</option>
                 {deployments.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.git_sha.slice(0, 7)} ·{" "}
+                    {getDeploymentLabel(item)} · {item.git_sha.slice(0, 7)} ·{" "}
                     {item.deployed_at
                       ? relativeTime(item.deployed_at)
                       : "배포 시각 없음"}
@@ -1179,9 +1186,9 @@ export function QaWorkspace({
           <div>
             <strong>과거 검수 버전을 보고 있어요</strong>
             <span>
-              보고 있는 버전 <code>{selectedDeployment.git_sha.slice(0, 7)}</code>
+              보고 있는 버전 <code>{getDeploymentLabel(selectedDeployment)}</code>
               <i>·</i>
-              현재 기준 <code>{activeDeployment.git_sha.slice(0, 7)}</code>
+              현재 기준 <code>{getDeploymentLabel(activeDeployment)}</code>
             </span>
           </div>
           <div className="qa-version-update__actions">
@@ -1203,7 +1210,8 @@ export function QaWorkspace({
           <div>
             <strong>최신 검수 버전으로 전환했어요</strong>
             <span>
-              현재 기준 SHA <code>{adminDeploymentNotice.git_sha.slice(0, 7)}</code>
+              {getDeploymentLabel(adminDeploymentNotice)} · SHA{" "}
+              <code>{adminDeploymentNotice.git_sha.slice(0, 7)}</code>
             </span>
           </div>
           <div className="qa-version-update__actions">
@@ -1276,9 +1284,40 @@ export function QaWorkspace({
             <span className="tool-notice__eyebrow">DEPLOYMENT RECORD</span>
             <h2>최신 배포 버전 등록</h2>
             <p>
-              Vercel 배포 상세에서 고유 URL, Deployment ID, Git SHA를 복사해
-              입력하세요. 등록하면 이 버전이 바로 팀의 최신 검수 기준이 됩니다.
+              개발자가 이해할 버전 이름과 변경 요약을 먼저 적고, Vercel 배포
+              정보를 연결하세요. 등록하면 이 버전이 바로 팀의 최신 검수 기준이 됩니다.
             </p>
+            <label>
+              버전 이름
+              <input
+                value={deploymentForm.versionName}
+                onChange={(event) =>
+                  setDeploymentForm({
+                    ...deploymentForm,
+                    versionName: event.target.value,
+                  })
+                }
+                placeholder="예: 모바일 메인 화면 수정"
+                maxLength={80}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              변경 요약 <small>(선택)</small>
+              <textarea
+                value={deploymentForm.changeSummary}
+                onChange={(event) =>
+                  setDeploymentForm({
+                    ...deploymentForm,
+                    changeSummary: event.target.value,
+                  })
+                }
+                placeholder="예: 헤더 여백과 작품 이미지 크기를 조정했습니다."
+                maxLength={500}
+                rows={3}
+              />
+            </label>
             <label>
               고유 Deployment URL
               <input
@@ -1292,7 +1331,6 @@ export function QaWorkspace({
                 }
                 placeholder="https://…vercel.app"
                 required
-                autoFocus
               />
             </label>
             <label>
@@ -2834,7 +2872,7 @@ function CommentInspector({
               <option value="">수정된 화면 선택</option>
               {reviewDeployments.map((deployment) => (
                 <option key={deployment.id} value={deployment.id}>
-                  {deployment.git_sha.slice(0, 7)} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}
+                  {getDeploymentLabel(deployment)} · {deployment.git_sha.slice(0, 7)} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}
                 </option>
               ))}
             </select>

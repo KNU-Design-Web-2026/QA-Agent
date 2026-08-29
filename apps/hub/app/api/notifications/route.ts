@@ -44,7 +44,7 @@ export async function GET() {
     const { data: reviewDeployments } = reviewDeploymentIds.length
       ? await supabase
           .from("deployments")
-          .select("id, immutable_url, git_sha, deployed_at")
+          .select("id, immutable_url, git_sha, version_name, change_summary, deployed_at")
           .in("id", reviewDeploymentIds)
       : { data: [] };
     const reviewDeploymentById = new Map(
