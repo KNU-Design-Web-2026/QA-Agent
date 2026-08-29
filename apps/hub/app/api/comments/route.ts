@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
 
 const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]), reviewerIds: z.array(z.string().uuid()).max(10).default([]) });
-const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional() });
+const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional(), reviewDeploymentId: z.string().uuid().optional() });
 const editSchema = z.object({ action: z.literal("edit"), commentId: z.string().uuid(), body: z.string().trim().min(1).max(5000), priority: z.enum(["low", "medium", "high", "blocker"]) });
 
 async function requireSession() {
@@ -50,17 +50,23 @@ export async function GET(request: Request) {
     const deploymentUrl = searchParams.get("deploymentUrl");
     const pathname = searchParams.get("pathname") ?? "/";
     const scope = searchParams.get("scope") ?? "route";
+    const commentId = searchParams.get("commentId");
     if (!projectSlug || !deploymentUrl) throw new Error("프로젝트와 배포본 정보가 필요합니다.");
     const { supabase, project, deployment } = await findProjectAndDeployment(projectSlug, deploymentUrl);
     let query = supabase
       .from("qa_comments")
-      .select("id, body, type, priority, status, pathname, query_string, viewport_width, viewport_height, device_scale_factor, zoom, scroll_x, scroll_y, element_qa_id, element_rect_json, normalized_anchor_json, created_at, updated_at, author_id")
+      .select("id, body, type, priority, status, pathname, query_string, viewport_width, viewport_height, device_scale_factor, zoom, scroll_x, scroll_y, element_qa_id, element_rect_json, normalized_anchor_json, created_at, updated_at, author_id, deployment_id, review_deployment_id")
       .eq("project_id", project.id)
-      .eq("deployment_id", deployment.id)
       .is("archived_at", null)
       .order("created_at", { ascending: false });
-    if (scope === "authored") query = query.eq("author_id", session.userId);
-    else if (scope !== "all") query = query.eq("pathname", pathname);
+    if (scope === "review") {
+      if (!commentId) throw new Error("확인할 의견 정보가 필요합니다.");
+      query = query.eq("id", commentId);
+    } else {
+      query = query.eq("deployment_id", deployment.id);
+      if (scope === "authored") query = query.eq("author_id", session.userId);
+      else if (scope !== "all") query = query.eq("pathname", pathname);
+    }
     const { data: rows, error } = await query;
     if (error) throw new Error("코멘트 목록을 불러오지 못했습니다.");
     const commentIds = (rows ?? []).map((row) => row.id);
@@ -74,13 +80,29 @@ export async function GET(request: Request) {
       ? await supabase.from("profiles").select("id, display_name, email").in("id", profileIds)
       : { data: [] };
     const authorById = new Map((authors ?? []).map((author) => [author.id, author]));
+    const reviewDeploymentIds = [
+      ...new Set(
+        (rows ?? [])
+          .map((row) => row.review_deployment_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const { data: reviewDeployments } = reviewDeploymentIds.length
+      ? await supabase
+          .from("deployments")
+          .select("id, immutable_url, git_sha, deployed_at")
+          .in("id", reviewDeploymentIds)
+      : { data: [] };
+    const reviewDeploymentById = new Map(
+      (reviewDeployments ?? []).map((item) => [item.id, item]),
+    );
     const annotationsByComment = new Map<string, unknown[]>();
     for (const annotation of annotations ?? []) annotationsByComment.set(annotation.qa_comment_id, [...(annotationsByComment.get(annotation.qa_comment_id) ?? []), annotation]);
     const eventsByComment = new Map<string, unknown[]>();
     for (const event of events ?? []) eventsByComment.set(event.qa_comment_id, [...(eventsByComment.get(event.qa_comment_id) ?? []), { ...event, actor: event.actor_id ? authorById.get(event.actor_id) ?? null : null }]);
     const reviewersByComment = new Map<string, unknown[]>();
     for (const recipient of reviewRecipients ?? []) reviewersByComment.set(recipient.qa_comment_id, [...(reviewersByComment.get(recipient.qa_comment_id) ?? []), authorById.get(recipient.reviewer_id) ?? null].filter(Boolean));
-    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [], reviewers: reviewersByComment.get(row.id) ?? [] })) });
+    return NextResponse.json({ deployment: { id: deployment.id, gitSha: deployment.git_sha, deployedAt: deployment.deployed_at }, comments: (rows ?? []).map((row) => ({ ...row, author: authorById.get(row.author_id) ?? null, reviewDeployment: row.review_deployment_id ? reviewDeploymentById.get(row.review_deployment_id) ?? null : null, annotations: annotationsByComment.get(row.id) ?? [], events: eventsByComment.get(row.id) ?? [], reviewers: reviewersByComment.get(row.id) ?? [] })) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트 목록을 불러오지 못했습니다." }, { status: 400 });
   }
@@ -161,7 +183,11 @@ export async function PATCH(request: Request) {
       .eq("id", input.commentId)
       .single();
     if (currentCommentError || !currentComment) throw new Error("코멘트를 찾을 수 없습니다.");
-    const { data, error } = await supabase.rpc("transition_qa_comment_as_actor", { comment_id: input.commentId, next_status: input.nextStatus, actor_id: session.userId, note: input.note ?? null });
+    if (input.nextStatus === "review_requested" && !input.reviewDeploymentId)
+      throw new Error("디자이너가 확인할 수정된 화면을 선택해 주세요.");
+    const { data, error } = input.nextStatus === "review_requested"
+      ? await supabase.rpc("request_qa_comment_review_as_actor", { comment_id: input.commentId, actor_id: session.userId, review_deployment_id: input.reviewDeploymentId!, note: input.note ?? null })
+      : await supabase.rpc("transition_qa_comment_as_actor", { comment_id: input.commentId, next_status: input.nextStatus, actor_id: session.userId, note: input.note ?? null });
     if (error || !data) throw new Error(error?.message ?? "상태를 변경하지 못했습니다.");
     if (input.nextStatus === "review_requested") {
       const { data: requestedReviewers } = await supabase

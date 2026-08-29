@@ -25,7 +25,7 @@ export async function GET() {
     const { data: comments } = commentIds.length
       ? await supabase
           .from("qa_comments")
-          .select("id, body, pathname, viewport_width, viewport_height, deployment_id, author_id")
+          .select("id, body, pathname, viewport_width, viewport_height, deployment_id, review_deployment_id, author_id")
           .in("id", commentIds)
       : { data: [] };
     const authorIds = [...new Set((comments ?? []).map((comment) => comment.author_id))];
@@ -34,10 +34,26 @@ export async function GET() {
       : { data: [] };
     const commentById = new Map((comments ?? []).map((comment) => [comment.id, comment]));
     const authorById = new Map((authors ?? []).map((author) => [author.id, author]));
+    const reviewDeploymentIds = [
+      ...new Set(
+        (comments ?? [])
+          .map((comment) => comment.review_deployment_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const { data: reviewDeployments } = reviewDeploymentIds.length
+      ? await supabase
+          .from("deployments")
+          .select("id, immutable_url, git_sha, deployed_at")
+          .in("id", reviewDeploymentIds)
+      : { data: [] };
+    const reviewDeploymentById = new Map(
+      (reviewDeployments ?? []).map((deployment) => [deployment.id, deployment]),
+    );
     const items = (notifications ?? [])
       .map((notification) => {
         const comment = commentById.get(notification.qa_comment_id);
-        return comment ? { ...notification, comment: { ...comment, author: authorById.get(comment.author_id) ?? null } } : null;
+        return comment ? { ...notification, comment: { ...comment, author: authorById.get(comment.author_id) ?? null }, reviewDeployment: comment.review_deployment_id ? reviewDeploymentById.get(comment.review_deployment_id) ?? null : null } : null;
       })
       .filter(Boolean);
     return NextResponse.json({ notifications: items, unreadCount: (notifications ?? []).filter((notification) => !notification.read_at).length });

@@ -26,6 +26,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQaAccessSession } from "@/components/auth-gate";
 import { getDeploymentView } from "@/lib/deployment-view";
+import { getReviewScreen } from "@/lib/review-screen";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -57,6 +58,14 @@ type QaComment = {
   normalized_anchor_json: Record<string, unknown>;
   created_at: string;
   author: { display_name: string | null; email: string } | null;
+  deployment_id: string;
+  review_deployment_id: string | null;
+  reviewDeployment: {
+    id: string;
+    immutable_url: string;
+    git_sha: string;
+    deployed_at: string | null;
+  } | null;
   annotations: Array<{
     id: string;
     kind: string;
@@ -85,8 +94,10 @@ type QaNotification = {
     viewport_width: number;
     viewport_height: number;
     deployment_id: string;
+    review_deployment_id: string | null;
     author: QaComment["author"];
   };
+  reviewDeployment: QaComment["reviewDeployment"];
 };
 type Reviewer = { id: string; displayName: string };
 type DeploymentInfo = {
@@ -224,6 +235,7 @@ export function QaWorkspace({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviewerTarget, setReviewerTarget] = useState("none");
+  const [reviewTargetDeploymentId, setReviewTargetDeploymentId] = useState("");
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
     null,
   );
@@ -247,6 +259,11 @@ export function QaWorkspace({
   );
   const [adminDeploymentNotice, setAdminDeploymentNotice] =
     useState<DeploymentInfo | null>(null);
+  const [reviewCommentId, setReviewCommentId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("review");
+  });
+  const [reviewComment, setReviewComment] = useState<QaComment | null>(null);
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isRegisteringDeployment, setIsRegisteringDeployment] = useState(false);
@@ -293,10 +310,25 @@ export function QaWorkspace({
   const isPastDeployment = deploymentView === "past";
   const actualUrl = selectedDeployment?.immutable_url ?? fallbackDeploymentUrl;
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
+  const displayComments =
+    reviewComment && !comments.some((comment) => comment.id === reviewComment.id)
+      ? [reviewComment, ...comments]
+      : comments;
   const selectedComment =
-    comments.find((comment) => comment.id === selectedCommentId) ??
-    comments[0] ??
+    displayComments.find((comment) => comment.id === selectedCommentId) ??
+    displayComments[0] ??
     null;
+  const reviewContextComment =
+    reviewComment?.review_deployment_id
+      ? reviewComment
+      : selectedComment?.review_deployment_id
+        ? selectedComment
+        : null;
+  const reviewScreen = getReviewScreen(
+    reviewContextComment?.deployment_id ?? null,
+    reviewContextComment?.review_deployment_id ?? null,
+    selectedDeploymentId,
+  );
   const shouldShowVersionUpdate =
     accessSession?.role !== "admin" &&
     Boolean(activeDeployment) &&
@@ -455,6 +487,34 @@ export function QaWorkspace({
     }
   }, [actualUrl, projectSlug, selectedDeployment]);
 
+  const loadReviewComment = useCallback(async () => {
+    if (!reviewCommentId || !selectedDeployment) {
+      setReviewComment(null);
+      return;
+    }
+    try {
+      const params = new URLSearchParams({
+        projectSlug,
+        deploymentUrl: actualUrl,
+        scope: "review",
+        commentId: reviewCommentId,
+      });
+      const response = await fetch(`/api/comments?${params}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error();
+      const comment = result.comments?.[0] as QaComment | undefined;
+      setReviewComment(
+        comment &&
+          (comment.review_deployment_id === selectedDeployment.id ||
+            comment.deployment_id === selectedDeployment.id)
+          ? comment
+          : null,
+      );
+    } catch {
+      setReviewComment(null);
+    }
+  }, [actualUrl, projectSlug, reviewCommentId, selectedDeployment]);
+
   const loadAllComments = useCallback(async () => {
     if (!selectedDeployment) {
       setAllComments([]);
@@ -567,6 +627,9 @@ export function QaWorkspace({
     void loadComments();
   }, [loadComments]);
   useEffect(() => {
+    void loadReviewComment();
+  }, [loadReviewComment]);
+  useEffect(() => {
     void loadAuthoredComments();
   }, [loadAuthoredComments]);
   useEffect(() => {
@@ -577,6 +640,9 @@ export function QaWorkspace({
   useEffect(() => {
     void loadReviewers();
   }, [loadReviewers]);
+  useEffect(() => {
+    if (activeDeploymentId) setReviewTargetDeploymentId(activeDeploymentId);
+  }, [activeDeploymentId]);
 
   useEffect(() => {
     const commentId = new URLSearchParams(window.location.search).get(
@@ -769,14 +835,23 @@ export function QaWorkspace({
     }
   }
 
-  async function updateCommentStatus(nextStatus: QaStatus, note?: string) {
+  async function updateCommentStatus(
+    nextStatus: QaStatus,
+    note?: string,
+    reviewDeploymentId?: string,
+  ) {
     if (!selectedComment) return;
     setIsTransitioning(true);
     try {
       const response = await fetch("/api/comments", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ commentId: selectedComment.id, nextStatus, note }),
+        body: JSON.stringify({
+          commentId: selectedComment.id,
+          nextStatus,
+          note,
+          reviewDeploymentId,
+        }),
       });
       const result = await response.json();
       if (!response.ok)
@@ -872,7 +947,17 @@ export function QaWorkspace({
 
   const openNotification = (notification: QaNotification) => {
     const viewportIndex = viewports.findIndex((viewport) => viewport.width === notification.comment.viewport_width);
-    setSelectedDeploymentId(notification.comment.deployment_id);
+    const shouldOpenUpdatedScreen =
+      notification.kind === "review_requested" &&
+      Boolean(notification.reviewDeployment);
+    setSelectedDeploymentId(
+      shouldOpenUpdatedScreen
+        ? notification.reviewDeployment!.id
+        : notification.comment.deployment_id,
+    );
+    setReviewCommentId(
+      shouldOpenUpdatedScreen ? notification.comment.id : null,
+    );
     setRoute(notification.comment.pathname);
     if (viewportIndex !== -1) setSelectedViewport(viewportIndex);
     setSelectedCommentId(notification.comment.id);
@@ -1132,6 +1217,42 @@ export function QaWorkspace({
           </div>
         </div>
       )}
+      {reviewScreen === "updated" && reviewContextComment && (
+        <div className="qa-review-screen-banner" role="status">
+          <div>
+            <strong>수정된 화면을 확인 중이에요</strong>
+            <span>남긴 의견이 원하는 방향으로 반영되었는지 확인해 주세요.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDeploymentId(reviewContextComment.deployment_id);
+              setSelectedCommentId(reviewContextComment.id);
+            }}
+          >
+            이전 화면 보기
+          </button>
+        </div>
+      )}
+      {reviewScreen === "original" && reviewContextComment && (
+        <div className="qa-review-screen-banner qa-review-screen-banner--original" role="status">
+          <div>
+            <strong>처음 의견을 남긴 화면이에요</strong>
+            <span>수정된 화면과 비교해 보고 싶다면 다시 이동할 수 있어요.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!reviewContextComment.review_deployment_id) return;
+              setReviewCommentId(reviewContextComment.id);
+              setSelectedDeploymentId(reviewContextComment.review_deployment_id);
+              setSelectedCommentId(reviewContextComment.id);
+            }}
+          >
+            수정된 화면 보기
+          </button>
+        </div>
+      )}
       {comingSoon && (
         <div className="tool-modal-backdrop">
           <section
@@ -1255,7 +1376,7 @@ export function QaWorkspace({
             >
               <CornersOut />
               <code>{route}</code>
-              <b>{comments.length}</b>
+              <b>{displayComments.length}</b>
             </div>
           </div>
           <div className="panel-rule" />
@@ -1276,9 +1397,9 @@ export function QaWorkspace({
             ))}
           </div>
           <div className="panel-rule" />
-          <SectionTitle label="현재 페이지" count={String(comments.length)} />
+          <SectionTitle label="현재 페이지" count={String(displayComments.length)} />
           <div className="comment-list" data-tutorial="qa-comment-list">
-            {comments.map((comment) => (
+            {displayComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
                 comment={comment}
@@ -1286,7 +1407,7 @@ export function QaWorkspace({
                 onClick={() => setSelectedCommentId(comment.id)}
               />
             ))}
-            {!isLoadingComments && !comments.length && (
+            {!isLoadingComments && !displayComments.length && (
               <p className="empty-comments">
                 이 경로에는 아직 코멘트가 없습니다.
               </p>
@@ -1421,7 +1542,7 @@ export function QaWorkspace({
                     />
                   )}
                   {markersVisible &&
-                    comments.map((comment, index) => (
+                    displayComments.map((comment, index) => (
                       <SavedAnnotation
                         key={comment.id}
                         comment={comment}
@@ -1568,6 +1689,9 @@ export function QaWorkspace({
               accessSession?.role === "admin" ||
               accessSession?.role === "developer"
             }
+            reviewDeployments={deployments}
+            reviewTargetDeploymentId={reviewTargetDeploymentId}
+            onReviewTargetDeploymentChange={setReviewTargetDeploymentId}
             canConfirm={Boolean(
               accessSession?.role === "admin" ||
               (Boolean(accessSession?.email) &&
@@ -1581,8 +1705,18 @@ export function QaWorkspace({
             )}
             onStartWork={() => void updateCommentStatus("in_progress")}
             onRequestReview={() =>
-              void updateCommentStatus("review_requested")
+              void updateCommentStatus(
+                "review_requested",
+                undefined,
+                reviewTargetDeploymentId,
+              )
             }
+            onOpenUpdatedScreen={() => {
+              if (!selectedComment?.review_deployment_id) return;
+              setReviewCommentId(selectedComment.id);
+              setSelectedDeploymentId(selectedComment.review_deployment_id);
+              setSelectedCommentId(selectedComment.id);
+            }}
             onConfirm={() => void updateCommentStatus("done")}
             onReopen={(note) =>
               void updateCommentStatus(
@@ -2492,9 +2626,13 @@ function CommentInspector({
   onEditedBodyChange,
   onEditedPriorityChange,
   canRequestReview,
+  reviewDeployments,
+  reviewTargetDeploymentId,
+  onReviewTargetDeploymentChange,
   canConfirm,
   onStartWork,
   onRequestReview,
+  onOpenUpdatedScreen,
   onConfirm,
   onReopen,
 }: {
@@ -2513,9 +2651,13 @@ function CommentInspector({
   onEditedBodyChange: (value: string) => void;
   onEditedPriorityChange: (value: QaComment["priority"]) => void;
   canRequestReview: boolean;
+  reviewDeployments: DeploymentInfo[];
+  reviewTargetDeploymentId: string;
+  onReviewTargetDeploymentChange: (value: string) => void;
   canConfirm: boolean;
   onStartWork: () => void;
   onRequestReview: () => void;
+  onOpenUpdatedScreen: () => void;
   onConfirm: () => void;
   onReopen: (note: string) => void;
 }) {
@@ -2678,13 +2820,46 @@ function CommentInspector({
           </button>
         )}
         {comment.status === "in_progress" && canRequestReview && (
-          <button className="advance" type="button" disabled={isTransitioning} onClick={onRequestReview}>
-            {isTransitioning ? "처리 중…" : "수정 완료 · 검토 요청"}
-          </button>
+          <div className="review-target-picker">
+            <label htmlFor="review-target-deployment">
+              디자이너에게 보여줄 수정된 화면
+            </label>
+            <select
+              id="review-target-deployment"
+              value={reviewTargetDeploymentId}
+              onChange={(event) =>
+                onReviewTargetDeploymentChange(event.target.value)
+              }
+            >
+              <option value="">수정된 화면 선택</option>
+              {reviewDeployments.map((deployment) => (
+                <option key={deployment.id} value={deployment.id}>
+                  {deployment.git_sha.slice(0, 7)} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}
+                </option>
+              ))}
+            </select>
+            <button
+              className="advance"
+              type="button"
+              disabled={isTransitioning || !reviewTargetDeploymentId}
+              onClick={onRequestReview}
+            >
+              {isTransitioning ? "처리 중…" : "수정 완료 · 검토 요청"}
+            </button>
+          </div>
         )}
         {comment.status === "review_requested" && canConfirm && !isReopenFormOpen && (
           <>
             <p className="review-request-hint">수정이 반영되었어요. 실제 화면을 확인해 주세요.</p>
+            {comment.reviewDeployment && (
+              <button
+                className="review-open-updated"
+                type="button"
+                onClick={onOpenUpdatedScreen}
+              >
+                수정된 화면 확인하기
+              </button>
+            )}
             <button className="advance" type="button" disabled={isTransitioning} onClick={onConfirm}>
               {isTransitioning ? "처리 중…" : "확인 완료"}
             </button>
