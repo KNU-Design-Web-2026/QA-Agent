@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getDeploymentLabel } from "@/lib/deployment-label";
+import { getHistoryDeployments, type HistoryDeployment } from "@/lib/history-deployments";
 
 type QaStatus = "open" | "in_progress" | "review_requested" | "done";
 type NormalizedAnchor = { x?: number; y?: number; width?: number; height?: number };
@@ -112,6 +113,7 @@ function downloadFile(name: string, content: string, type: string) {
 export function QaHistory() {
   const projectSlug = process.env.NEXT_PUBLIC_QA_PROJECT_SLUG ?? "knud-exhibition";
   const [comments, setComments] = useState<HistoryComment[]>([]);
+  const [registeredDeployments, setRegisteredDeployments] = useState<HistoryDeployment[]>([]);
   const [status, setStatus] = useState<"all" | QaStatus>("all");
   const [deploymentId, setDeploymentId] = useState("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -128,14 +130,18 @@ export function QaHistory() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "QA 기록을 불러오지 못했습니다.");
       setComments(result.comments ?? []);
+      setRegisteredDeployments(result.deployments ?? []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "QA 기록을 불러오지 못했습니다."); setComments([]);
+      setError(loadError instanceof Error ? loadError.message : "QA 기록을 불러오지 못했습니다."); setComments([]); setRegisteredDeployments([]);
     } finally { setIsLoading(false); }
   }, [projectSlug]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
 
-  const deployments = useMemo(() => [...new Map(comments.filter((comment) => comment.deployment).map((comment) => [comment.deployment_id, comment.deployment!])).values()], [comments]);
+  const deployments = useMemo(
+    () => getHistoryDeployments(registeredDeployments, comments),
+    [comments, registeredDeployments],
+  );
   const visibleComments = comments.filter((comment) => (status === "all" || comment.status === status) && (deploymentId === "all" || comment.deployment_id === deploymentId));
   const selectedComments = comments.filter((comment) => selectedIds.includes(comment.id));
   const isAllVisibleSelected = visibleComments.length > 0 && visibleComments.every((comment) => selectedIds.includes(comment.id));
@@ -169,13 +175,13 @@ export function QaHistory() {
     <header className="qa-history-header"><button type="button" onClick={() => window.location.assign("/")}><ArrowLeft /> 검수 화면으로 돌아가기</button><span>KNUD DESIGN QA HUB</span></header>
     <section className="qa-history-content">
       <div className="qa-history-title"><div><p>검수 기록</p><h1>전체 QA 목록</h1><span>남겨진 모든 의견을 버전별로 보관하고 다시 확인할 수 있습니다.</span></div><div className="qa-history-count"><small>전체 의견</small><strong>{comments.length}</strong></div></div>
-      <div className="qa-history-filters"><span><FunnelSimple /> 보기</span><select value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} aria-label="버전별 보기"><option value="all">모든 버전</option>{deployments.map((deployment) => <option key={deployment.id} value={deployment.id}>{getDeploymentLabel(deployment)} · {deployment.git_sha.slice(0, 7)} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}</option>)}</select><div className="qa-history-statuses" aria-label="상태별 보기">{(["all", "open", "in_progress", "review_requested", "done"] as const).map((value) => <button key={value} type="button" className={status === value ? "is-selected" : ""} onClick={() => setStatus(value)}>{value === "all" ? "전체" : statusLabel[value]}</button>)}</div></div>
+      <div className="qa-history-filters"><span><FunnelSimple /> 보기</span><select value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} aria-label="버전별 보기"><option value="all">모든 버전</option>{deployments.map((deployment) => <option key={deployment.id} value={deployment.id}>{getDeploymentLabel(deployment)}{deployment.version_name ? ` · ${deployment.git_sha.slice(0, 7)}` : ""} · {deployment.deployed_at ? relativeTime(deployment.deployed_at) : "등록 시각 없음"}</option>)}</select><div className="qa-history-statuses" aria-label="상태별 보기">{(["all", "open", "in_progress", "review_requested", "done"] as const).map((value) => <button key={value} type="button" className={status === value ? "is-selected" : ""} onClick={() => setStatus(value)}>{value === "all" ? "전체" : statusLabel[value]}</button>)}</div></div>
       {!isLoading && !error && visibleComments.length > 0 && <div className="qa-export-bar"><label><input type="checkbox" checked={isAllVisibleSelected} onChange={toggleAllVisible} /> <span>현재 목록 전체 선택</span></label><span>{selectedIds.length}개 선택됨 <small>최대 5개</small></span><button type="button" disabled={selectedIds.length === 0} onClick={() => { setCopyStatus(null); setIsExportOpen(true); }}><Export /> 수정 Agent용 내보내기</button></div>}
       <div className="qa-history-list">
         {isLoading && <p className="qa-history-empty">검수 기록을 불러오는 중입니다.</p>}
         {!isLoading && error && <p className="qa-history-empty is-error">{error}</p>}
-        {!isLoading && !error && visibleComments.length === 0 && <p className="qa-history-empty">조건에 맞는 검수 의견이 없습니다.</p>}
-        {!isLoading && !error && visibleComments.map((comment) => <div className={`qa-history-row ${selectedIds.includes(comment.id) ? "is-selected" : ""}`} key={comment.id}><label className="qa-history-row__check"><input type="checkbox" checked={selectedIds.includes(comment.id)} onChange={() => toggleComment(comment.id)} aria-label={`${comment.body} 선택`} /></label><button className="qa-history-item" type="button" onClick={() => openComment(comment)}><span className={`qa-history-item__priority is-${comment.priority}`} aria-label={`우선순위 ${priorityLabel[comment.priority]}`} /><span className="qa-history-item__main"><b>{comment.body}</b><small>{authorName(comment.author)} · {comment.pathname} · {comment.viewport_width} × {comment.viewport_height} · {relativeTime(comment.created_at)}</small></span><span className="qa-history-item__version"><code>{comment.deployment ? getDeploymentLabel(comment.deployment) : "등록된 버전 없음"}</code><small>{comment.deployment?.git_sha.slice(0, 7)}</small><em className={`is-${comment.status}`}>{statusLabel[comment.status]}</em></span><span className="qa-history-item__open">이 버전 열기</span><CaretRight aria-hidden="true" /></button></div>)}
+        {!isLoading && !error && visibleComments.length === 0 && <p className="qa-history-empty">{deploymentId === "all" ? "조건에 맞는 검수 의견이 없습니다." : "이 버전에는 아직 검수 의견이 없습니다."}</p>}
+        {!isLoading && !error && visibleComments.map((comment) => <div className={`qa-history-row ${selectedIds.includes(comment.id) ? "is-selected" : ""}`} key={comment.id}><label className="qa-history-row__check"><input type="checkbox" checked={selectedIds.includes(comment.id)} onChange={() => toggleComment(comment.id)} aria-label={`${comment.body} 선택`} /></label><button className="qa-history-item" type="button" onClick={() => openComment(comment)}><span className={`qa-history-item__priority is-${comment.priority}`} aria-label={`우선순위 ${priorityLabel[comment.priority]}`} /><span className="qa-history-item__main"><b>{comment.body}</b><small>{authorName(comment.author)} · {comment.pathname} · {comment.viewport_width} × {comment.viewport_height} · {relativeTime(comment.created_at)}</small></span><span className="qa-history-item__version"><code>{comment.deployment ? getDeploymentLabel(comment.deployment) : "등록된 버전 없음"}</code>{comment.deployment?.version_name && <small>{comment.deployment.git_sha.slice(0, 7)}</small>}<em className={`is-${comment.status}`}>{statusLabel[comment.status]}</em></span><span className="qa-history-item__open">이 버전 열기</span><CaretRight aria-hidden="true" /></button></div>)}
       </div>
     </section>
     {isExportOpen && <div className="qa-export-modal-backdrop" role="presentation" onMouseDown={() => setIsExportOpen(false)}><section className="qa-export-modal" role="dialog" aria-modal="true" aria-label="수정 Agent용 의견 내보내기" onMouseDown={(event) => event.stopPropagation()}><header><div><span>수정 Agent용 작업 묶음</span><h2>{selectedComments.length}개 의견 내보내기</h2></div><button type="button" onClick={() => setIsExportOpen(false)} aria-label="내보내기 창 닫기"><X /></button></header><p>버전·화면 크기·위치·재현 링크와 SVG 위치 안내를 함께 전달합니다. 수정 후에는 자동 완료하지 말고 검토 요청으로 남겨 주세요.</p><div className="qa-export-modal__formats"><button type="button" className={exportFormat === "markdown" ? "is-selected" : ""} onClick={() => setExportFormat("markdown")}><Copy /> Agent용 Markdown<small>바로 붙여 넣기</small></button><button type="button" className={exportFormat === "json" ? "is-selected" : ""} onClick={() => setExportFormat("json")}><FileCode /> JSON<small>자동 연결용</small></button></div><div className="qa-export-modal__items">{selectedComments.map((comment, index) => <div key={comment.id}><b>QA-{String(index + 1).padStart(3, "0")}</b><span>{comment.body}</span></div>)}</div>{copyStatus && <p className="qa-export-modal__notice">{copyStatus}</p>}<footer><button type="button" onClick={() => void copyExport()}><Copy /> 복사</button><button className="primary" type="button" onClick={downloadExport}><DownloadSimple /> 다운로드</button></footer></section></div>}

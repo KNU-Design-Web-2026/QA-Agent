@@ -37,15 +37,15 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
     if (commentsError) throw new Error("QA 기록을 불러오지 못했습니다.");
 
-    const deploymentIds = [...new Set((comments ?? []).map((comment) => comment.deployment_id))];
     const authorIds = [...new Set((comments ?? []).map((comment) => comment.author_id))];
     const [{ data: deployments }, { data: authors }] = await Promise.all([
-      deploymentIds.length
-        ? supabase
-            .from("deployments")
-            .select("id, immutable_url, git_sha, version_name, change_summary, deployed_at")
-            .in("id", deploymentIds)
-        : Promise.resolve({ data: [] }),
+      supabase
+        .from("deployments")
+        .select("id, immutable_url, git_sha, version_name, change_summary, deployed_at")
+        .eq("project_id", project.id)
+        .eq("state", "ready")
+        .order("deployed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
       authorIds.length
         ? supabase
             .from("profiles")
@@ -61,6 +61,7 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json({
+      deployments: deployments ?? [],
       comments: (comments ?? []).map((comment) => ({
         ...comment,
         deployment: deploymentById.get(comment.deployment_id) ?? null,

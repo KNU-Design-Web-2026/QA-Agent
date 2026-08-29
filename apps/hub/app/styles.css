@@ -373,8 +373,8 @@
 .qa-history-item__main { min-width: 0; flex: 1; }
 .qa-history-item__main b { overflow: hidden; display: block; font-size: 13px; font-weight: 650; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .qa-history-item__main small { overflow: hidden; display: block; margin-top: 6px; color: #858580; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.qa-history-item__version { width: 156px; flex: 0 0 auto; display: grid; justify-items: end; gap: 5px; }
-.qa-history-item__version code { color: #363633; font-size: 10.5px; }
+.qa-history-item__version { width: 148px; flex: 0 0 auto; display: grid; justify-items: end; gap: 5px; }
+.qa-history-item__version code { max-width: 100%; overflow: hidden; color: #363633; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .qa-history-item__version small { color: #8a8a84; font-family: var(--font-mono); font-size: 9px; }
 .qa-history-item__version em { padding: 3px 5px; border-radius: 4px; background: #f1f1ed; color: #74746f; font-size: 9px; font-style: normal; font-weight: 700; }
 .qa-history-item__version em.is-open { background: #fff1b7; color: #6d5600; }.qa-history-item__version em.is-in_progress { background: #e2f3ff; color: #126687; }.qa-history-item__version em.is-review_requested { background: #eee6ff; color: #5e3a91; }.qa-history-item__version em.is-done { background: #e7eee6; color: #4c6c4b; }
