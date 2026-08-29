@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
+import { shouldActivateRegisteredDeployment } from "@/lib/deployment-activation";
 
 const deploymentSchema = z.object({
   projectSlug: z.string().min(1),
@@ -76,16 +77,14 @@ export async function POST(request: Request) {
       .select("id, immutable_url, production_alias, git_sha, git_ref, provider_deployment_id, deployed_at, created_at")
       .single();
     if (error || !data) throw new Error(error?.message ?? "배포 버전을 등록하지 못했습니다.");
-    if (!existingDeployment) {
+    if (shouldActivateRegisteredDeployment(Boolean(existingDeployment))) {
       const { error: activateError } = await supabase.from("projects").update({ qa_active_deployment_id: data.id }).eq("id", project.id);
       if (activateError) throw new Error("최신 QA 기준 버전을 설정하지 못했습니다.");
     }
     return NextResponse.json(
       {
         deployment: data,
-        activeDeploymentId: existingDeployment
-          ? project.qa_active_deployment_id
-          : data.id,
+        activeDeploymentId: data.id,
       },
       { status: 201 },
     );
