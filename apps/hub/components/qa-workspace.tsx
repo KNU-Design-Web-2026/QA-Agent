@@ -37,6 +37,7 @@ import {
   getCommentAnchorPosition,
 } from "@/lib/comment-anchor";
 import { getReviewScreen } from "@/lib/review-screen";
+import { shouldShowScreenLoading } from "@/lib/screen-loading";
 import { getVisibleVersionComments } from "@/lib/version-comments";
 
 const viewports = [
@@ -240,6 +241,8 @@ export function QaWorkspace({
   const [allComments, setAllComments] = useState<QaComment[]>([]);
   const [isQaListOpen, setIsQaListOpen] = useState(false);
   const [isLoadingAllComments, setIsLoadingAllComments] = useState(false);
+  const [isLoadingAuthoredComments, setIsLoadingAuthoredComments] =
+    useState(false);
   const [qaListStatus, setQaListStatus] = useState<"all" | QaStatus>("all");
   const [notifications, setNotifications] = useState<QaNotification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
@@ -254,6 +257,7 @@ export function QaWorkspace({
   );
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
+  const [isSwitchingVersion, setIsSwitchingVersion] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [editedBody, setEditedBody] = useState("");
@@ -316,6 +320,7 @@ export function QaWorkspace({
   const previousActiveDeploymentIdRef = useRef<string | null | undefined>(
     undefined,
   );
+  const commentsRequestIdRef = useRef(0);
   const currentViewport = viewports[selectedViewport] ?? {
     width: 1020,
     height: 1370,
@@ -357,6 +362,7 @@ export function QaWorkspace({
     selectedDeploymentId,
   );
   const versionComments = getVisibleVersionComments(allComments);
+  const isScreenLoading = shouldShowScreenLoading(isSwitchingVersion);
   const shouldShowVersionUpdate =
     accessSession?.role !== "admin" &&
     Boolean(activeDeployment) &&
@@ -504,6 +510,7 @@ export function QaWorkspace({
   }, [accessSession?.role, projectSlug]);
 
   const loadComments = useCallback(async () => {
+    const requestId = ++commentsRequestIdRef.current;
     if (!selectedDeployment) {
       setComments([]);
       setSelectedCommentId(null);
@@ -522,6 +529,7 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "코멘트 목록을 불러오지 못했습니다.");
+      if (requestId !== commentsRequestIdRef.current) return;
       const activeComments = (result.comments ?? []).filter(
         (comment: QaComment) => comment.status !== "done",
       );
@@ -532,6 +540,7 @@ export function QaWorkspace({
           : (activeComments[0]?.id ?? null),
       );
     } catch (error) {
+      if (requestId !== commentsRequestIdRef.current) return;
       setCommentsError(
         error instanceof Error
           ? error.message
@@ -540,15 +549,19 @@ export function QaWorkspace({
       setComments([]);
       setSelectedCommentId(null);
     } finally {
-      setIsLoadingComments(false);
+      if (requestId === commentsRequestIdRef.current) {
+        setIsLoadingComments(false);
+      }
     }
   }, [actualUrl, projectSlug, route, selectedDeployment]);
 
   const loadAuthoredComments = useCallback(async () => {
     if (!selectedDeployment) {
       setAuthoredComments([]);
+      setIsLoadingAuthoredComments(false);
       return;
     }
+    setIsLoadingAuthoredComments(true);
     try {
       const params = new URLSearchParams({
         projectSlug,
@@ -566,6 +579,8 @@ export function QaWorkspace({
       );
     } catch {
       setAuthoredComments([]);
+    } finally {
+      setIsLoadingAuthoredComments(false);
     }
   }, [actualUrl, projectSlug, selectedDeployment]);
 
@@ -708,6 +723,11 @@ export function QaWorkspace({
   useEffect(() => {
     void loadComments();
   }, [loadComments]);
+  useEffect(() => {
+    if (isSwitchingVersion && !isLoadingComments) {
+      setIsSwitchingVersion(false);
+    }
+  }, [isLoadingComments, isSwitchingVersion]);
   useEffect(() => {
     void loadReviewComment();
   }, [loadReviewComment]);
@@ -905,6 +925,9 @@ export function QaWorkspace({
 
   async function activateDeployment(deploymentId: string) {
     setDeploymentsError(null);
+    commentsRequestIdRef.current += 1;
+    setIsSwitchingVersion(true);
+    setIsLoadingComments(true);
     try {
       const response = await fetch("/api/deployments", {
         method: "PATCH",
@@ -916,6 +939,8 @@ export function QaWorkspace({
         throw new Error(result.error ?? "QA 기준 버전을 변경하지 못했습니다.");
       setSelectedDeploymentId(result.activeDeploymentId);
     } catch (error) {
+      setIsSwitchingVersion(false);
+      setIsLoadingComments(false);
       setDeploymentsError(
         error instanceof Error
           ? error.message
@@ -966,6 +991,10 @@ export function QaWorkspace({
   }
 
   function selectDeploymentForViewing(deploymentId: string) {
+    if (deploymentId === selectedDeploymentId) return;
+    commentsRequestIdRef.current += 1;
+    setIsSwitchingVersion(true);
+    setIsLoadingComments(true);
     setSelectedDeploymentId(deploymentId);
     setSelectedCommentId(null);
 
@@ -1692,7 +1721,7 @@ export function QaWorkspace({
           <div className="panel-rule" />
           <SectionTitle label="현재 페이지" count={String(displayComments.length)} />
           <div className="comment-list" data-tutorial="qa-comment-list">
-            {displayComments.map((comment) => (
+            {isLoadingComments ? <CommentListSkeleton /> : displayComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
                 comment={comment}
@@ -1712,7 +1741,7 @@ export function QaWorkspace({
             count={String(versionComments.length)}
           />
           <div className="comment-list comment-list--version" data-tutorial="qa-version-comments">
-            {versionComments.map((comment) => (
+            {isLoadingAllComments ? <CommentListSkeleton /> : versionComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
                 comment={comment}
@@ -1720,7 +1749,7 @@ export function QaWorkspace({
                 onClick={() => openComment(comment)}
               />
             ))}
-            {!versionComments.length && (
+            {!isLoadingAllComments && !versionComments.length && (
               <p className="empty-comments">
                 이 버전에는 아직 코멘트가 없습니다.
               </p>
@@ -1732,7 +1761,7 @@ export function QaWorkspace({
             count={String(authoredComments.length)}
           />
           <div className="comment-list" data-tutorial="qa-my-comments">
-            {authoredComments.map((comment) => (
+            {isLoadingAuthoredComments ? <CommentListSkeleton rows={2} /> : authoredComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
                 comment={comment}
@@ -1740,7 +1769,7 @@ export function QaWorkspace({
                 onClick={() => openComment(comment)}
               />
             ))}
-            {!authoredComments.length && (
+            {!isLoadingAuthoredComments && !authoredComments.length && (
               <p className="empty-comments">
                 이 버전에서 작성한 코멘트가 없습니다.
               </p>
@@ -1749,6 +1778,7 @@ export function QaWorkspace({
         </aside>
 
         <section className="qa-canvas">
+          {isScreenLoading && <ScreenLoadingOverlay />}
           <div className="frame-workspace">
             <article
               className="live-stage"
@@ -2506,6 +2536,32 @@ function CommentListItem({
         </small>
       </span>
     </button>
+  );
+}
+
+function CommentListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="comment-list-skeleton" aria-label="코멘트 목록을 불러오는 중" aria-live="polite">
+      {Array.from({ length: rows }, (_, index) => (
+        <div className="comment-list-skeleton__row" key={index}>
+          <span className="comment-list-skeleton__avatar" />
+          <span className="comment-list-skeleton__content">
+            <i />
+            <i />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScreenLoadingOverlay() {
+  return (
+    <div className="screen-loading-overlay" role="status" aria-live="polite">
+      <span className="screen-loading-overlay__spinner" aria-hidden="true" />
+      <strong>검수 화면을 불러오는 중이에요</strong>
+      <p>선택한 화면과 의견을 준비하고 있어요.</p>
+    </div>
   );
 }
 

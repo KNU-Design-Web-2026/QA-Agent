@@ -306,6 +306,17 @@
 .comment-list-item__content small i { margin: 0 2px; color: #b3b3ae; font-style: normal; }
 .comment-list-item__status { color: #5d5d57; font-size: inherit; font-weight: 800; }
 .comment-list-item__status.is-open { color: #997400; }.comment-list-item__status.is-in_progress { color: #16739a; }.comment-list-item__status.is-review_requested { color: #7146a9; }.comment-list-item__status.is-done { color: #4f7850; }
+.comment-list-skeleton { display: grid; gap: 4px; padding: 3px 0; }
+.comment-list-skeleton__row { min-height: 48px; padding: 7px 6px; display: flex; align-items: center; gap: 8px; }
+.comment-list-skeleton__avatar, .comment-list-skeleton__content i { display: block; border-radius: 999px; background: linear-gradient(90deg, #efefeb 20%, #f8f8f5 50%, #efefeb 80%); background-size: 200% 100%; animation: qa-loading-shimmer 1.25s ease-in-out infinite; }
+.comment-list-skeleton__avatar { width: 26px; height: 26px; flex: 0 0 auto; }
+.comment-list-skeleton__content { min-width: 0; flex: 1; display: grid; gap: 6px; }
+.comment-list-skeleton__content i { width: 86%; height: 9px; }.comment-list-skeleton__content i:last-child { width: 48%; height: 7px; }
+.screen-loading-overlay { position: absolute; z-index: 60; inset: 0; min-height: 430px; background: #f1f0eddf; display: grid; place-content: center; justify-items: center; gap: 10px; color: #222; text-align: center; backdrop-filter: blur(2px); }
+.screen-loading-overlay__spinner { width: 34px; height: 34px; border: 3px solid #d4d3ce; border-top-color: #111; border-radius: 50%; animation: qa-loading-spin .72s linear infinite; }
+.screen-loading-overlay strong { font-size: 14px; letter-spacing: -.02em; }.screen-loading-overlay p { margin: -3px 0 0; color: #73736e; font-size: 11px; }
+@keyframes qa-loading-spin { to { transform: rotate(360deg); } } @keyframes qa-loading-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .comment-list-skeleton__avatar, .comment-list-skeleton__content i, .screen-loading-overlay__spinner { animation: none; } }
 
 .qa-list-drawer-backdrop { position: fixed; z-index: 240; inset: 0; background: #1114; display: flex; justify-content: flex-end; }
 .qa-list-drawer { width: min(410px, calc(100vw - 24px)); height: 100dvh; padding: 0 14px 18px; overflow-y: auto; background: #fff; box-shadow: -18px 0 46px #1113; color: #111; }
