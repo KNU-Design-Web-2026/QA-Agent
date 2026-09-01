@@ -25,7 +25,10 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQaAccessSession } from "@/components/auth-gate";
-import { getDeploymentLabel } from "@/lib/deployment-label";
+import {
+  getDeploymentLabel,
+  getViewerDeploymentOptionLabel,
+} from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
 import { getReviewScreen } from "@/lib/review-screen";
 
@@ -842,6 +845,24 @@ export function QaWorkspace({
     }
   }
 
+  function selectDeploymentForViewing(deploymentId: string) {
+    setSelectedDeploymentId(deploymentId);
+    setSelectedCommentId(null);
+
+    const query = new URLSearchParams(window.location.search);
+    if (deploymentId === activeDeploymentId) {
+      query.delete("deployment");
+    } else {
+      query.set("deployment", deploymentId);
+    }
+    const search = query.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${search ? `?${search}` : ""}`,
+    );
+  }
+
   async function updateCommentStatus(
     nextStatus: QaStatus,
     note?: string,
@@ -919,6 +940,9 @@ export function QaWorkspace({
   }
 
   const openComment = (comment: QaComment) => {
+    if (comment.deployment_id !== selectedDeploymentId) {
+      selectDeploymentForViewing(comment.deployment_id);
+    }
     setRoute(comment.pathname);
     const viewportIndex = viewports.findIndex(
       (viewport) => viewport.width === comment.viewport_width,
@@ -957,7 +981,7 @@ export function QaWorkspace({
     const shouldOpenUpdatedScreen =
       notification.kind === "review_requested" &&
       Boolean(notification.reviewDeployment);
-    setSelectedDeploymentId(
+    selectDeploymentForViewing(
       shouldOpenUpdatedScreen
         ? notification.reviewDeployment!.id
         : notification.comment.deployment_id,
@@ -1090,11 +1114,26 @@ export function QaWorkspace({
               <small>{deployedLabel}</small>
             </label>
           ) : (
-            <span className="deploy-select">
+            <label className="deploy-select deploy-select--viewer">
               <i />
-              QA 기준 <code>{deploymentLabel}</code>
+              <span>검수 화면</span>
+              <select
+                value={selectedDeploymentId ?? ""}
+                onChange={(event) => selectDeploymentForViewing(event.target.value)}
+                aria-label="검수 화면 선택"
+              >
+                <option value="">검수 화면 선택</option>
+                {deployments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {getViewerDeploymentOptionLabel(
+                      item,
+                      item.id === activeDeploymentId,
+                    )}
+                  </option>
+                ))}
+              </select>
               <small>{deployedLabel}</small>
-            </span>
+            </label>
           )}
         </div>
         <div className="toolbar-actions">
@@ -1196,8 +1235,7 @@ export function QaWorkspace({
               className="go"
               type="button"
               onClick={() => {
-                setSelectedDeploymentId(activeDeployment.id);
-                setSelectedCommentId(null);
+                selectDeploymentForViewing(activeDeployment.id);
               }}
             >
               현재 검수 버전으로 돌아가기
@@ -1234,7 +1272,7 @@ export function QaWorkspace({
           <button
             type="button"
             onClick={() => {
-              setSelectedDeploymentId(reviewContextComment.deployment_id);
+              selectDeploymentForViewing(reviewContextComment.deployment_id);
               setSelectedCommentId(reviewContextComment.id);
             }}
           >
@@ -1253,7 +1291,7 @@ export function QaWorkspace({
             onClick={() => {
               if (!reviewContextComment.review_deployment_id) return;
               setReviewCommentId(reviewContextComment.id);
-              setSelectedDeploymentId(reviewContextComment.review_deployment_id);
+              selectDeploymentForViewing(reviewContextComment.review_deployment_id);
               setSelectedCommentId(reviewContextComment.id);
             }}
           >
@@ -1752,7 +1790,7 @@ export function QaWorkspace({
             onOpenUpdatedScreen={() => {
               if (!selectedComment?.review_deployment_id) return;
               setReviewCommentId(selectedComment.id);
-              setSelectedDeploymentId(selectedComment.review_deployment_id);
+              selectDeploymentForViewing(selectedComment.review_deployment_id);
               setSelectedCommentId(selectedComment.id);
             }}
             onConfirm={() => void updateCommentStatus("done")}
