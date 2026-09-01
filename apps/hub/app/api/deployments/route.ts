@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
 import { shouldActivateRegisteredDeployment } from "@/lib/deployment-activation";
+import { deploymentUpdateSchema } from "@/lib/deployment-update";
 
 const deploymentSchema = z.object({
   projectSlug: z.string().min(1),
@@ -14,7 +15,6 @@ const deploymentSchema = z.object({
   changeSummary: z.string().trim().max(500).optional().default(""),
   deployedAt: z.string().datetime().optional(),
 });
-const activateSchema = z.object({ projectSlug: z.string().min(1), deploymentId: z.string().uuid() });
 
 async function requireSession() {
   return readAccessToken((await cookies()).get(QA_ACCESS_COOKIE)?.value);
@@ -102,12 +102,26 @@ export async function PATCH(request: Request) {
   if (!session) return NextResponse.json({ error: "접근 세션이 만료되었습니다." }, { status: 401 });
   if (session.role !== "admin") return NextResponse.json({ error: "QA 기준 버전은 관리자만 변경할 수 있습니다." }, { status: 403 });
   try {
-    const input = activateSchema.parse(await request.json());
+    const input = deploymentUpdateSchema.parse(await request.json());
     const supabase = createAdminClient();
     const { data: project, error: projectError } = await supabase.from("projects").select("id").eq("slug", input.projectSlug).single();
     if (projectError || !project) throw new Error("QA 프로젝트 설정을 찾을 수 없습니다.");
     const { data: deployment, error: deploymentError } = await supabase.from("deployments").select("id").eq("id", input.deploymentId).eq("project_id", project.id).eq("state", "ready").single();
     if (deploymentError || !deployment) throw new Error("선택한 배포 버전을 찾을 수 없습니다.");
+    if (input.action === "rename") {
+      const { data, error } = await supabase
+        .from("deployments")
+        .update({
+          version_name: input.versionName,
+          change_summary: input.changeSummary || null,
+        })
+        .eq("id", deployment.id)
+        .select("id, immutable_url, production_alias, git_sha, git_ref, version_name, change_summary, provider_deployment_id, deployed_at, created_at")
+        .single();
+      if (error || !data)
+        throw new Error(error?.message ?? "버전 이름을 수정하지 못했습니다.");
+      return NextResponse.json({ deployment: data });
+    }
     const { error } = await supabase.from("projects").update({ qa_active_deployment_id: deployment.id }).eq("id", project.id);
     if (error) throw new Error("QA 기준 버전을 변경하지 못했습니다.");
     return NextResponse.json({ activeDeploymentId: deployment.id });

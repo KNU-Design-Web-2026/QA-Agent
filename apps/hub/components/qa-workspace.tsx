@@ -280,6 +280,13 @@ export function QaWorkspace({
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isRegisteringDeployment, setIsRegisteringDeployment] = useState(false);
+  const [isDeploymentEditModalOpen, setIsDeploymentEditModalOpen] =
+    useState(false);
+  const [isUpdatingDeployment, setIsUpdatingDeployment] = useState(false);
+  const [deploymentEditForm, setDeploymentEditForm] = useState({
+    versionName: "",
+    changeSummary: "",
+  });
   const [deploymentForm, setDeploymentForm] = useState({
     immutableUrl: "",
     providerDeploymentId: "",
@@ -902,7 +909,7 @@ export function QaWorkspace({
       const response = await fetch("/api/deployments", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectSlug, deploymentId }),
+        body: JSON.stringify({ action: "activate", projectSlug, deploymentId }),
       });
       const result = await response.json();
       if (!response.ok)
@@ -914,6 +921,47 @@ export function QaWorkspace({
           ? error.message
           : "QA 기준 버전을 변경하지 못했습니다.",
       );
+    }
+  }
+
+  function openDeploymentEdit() {
+    if (!selectedDeployment) return;
+    setDeploymentsError(null);
+    setDeploymentEditForm({
+      versionName: selectedDeployment.version_name ?? selectedDeployment.git_sha.slice(0, 7),
+      changeSummary: selectedDeployment.change_summary ?? "",
+    });
+    setIsManagementMenuOpen(false);
+    setIsDeploymentEditModalOpen(true);
+  }
+
+  async function updateDeploymentDetails(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedDeployment) return;
+    setIsUpdatingDeployment(true);
+    setDeploymentsError(null);
+    try {
+      const response = await fetch("/api/deployments", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "rename",
+          projectSlug,
+          deploymentId: selectedDeployment.id,
+          ...deploymentEditForm,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error ?? "버전 이름을 수정하지 못했습니다.");
+      await loadDeployments();
+      setIsDeploymentEditModalOpen(false);
+    } catch (error) {
+      setDeploymentsError(
+        error instanceof Error ? error.message : "버전 이름을 수정하지 못했습니다.",
+      );
+    } finally {
+      setIsUpdatingDeployment(false);
     }
   }
 
@@ -1268,10 +1316,16 @@ export function QaWorkspace({
                   <small>모든 버전의 검수 이력</small>
                 </button>
                 {accessSession?.role === "admin" && (
-                  <button type="button" onClick={() => { setIsManagementMenuOpen(false); setIsDeploymentModalOpen(true); }}>
-                    <span>최신 버전 등록</span>
-                    <small>등록 후 바로 검수 기준 전환</small>
-                  </button>
+                  <>
+                    <button type="button" onClick={openDeploymentEdit} disabled={!selectedDeployment}>
+                      <span>현재 버전 이름 수정</span>
+                      <small>이름과 변경 요약 편집</small>
+                    </button>
+                    <button type="button" onClick={() => { setIsManagementMenuOpen(false); setIsDeploymentModalOpen(true); }}>
+                      <span>최신 버전 등록</span>
+                      <small>등록 후 바로 검수 기준 전환</small>
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -1537,6 +1591,62 @@ export function QaWorkspace({
                 disabled={isRegisteringDeployment}
               >
                 {isRegisteringDeployment ? "등록 중…" : "등록하고 검수 시작"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
+      {isDeploymentEditModalOpen && selectedDeployment && (
+        <div className="tool-modal-backdrop">
+          <form className="deployment-modal" onSubmit={updateDeploymentDetails}>
+            <span className="tool-notice__eyebrow">DEPLOYMENT RECORD</span>
+            <h2>현재 버전 정보 수정</h2>
+            <p>
+              코멘트와 배포 주소는 그대로 두고, 팀에서 구분하기 쉬운 버전 이름과
+              변경 요약만 수정합니다.
+            </p>
+            <label>
+              버전 이름
+              <input
+                value={deploymentEditForm.versionName}
+                onChange={(event) =>
+                  setDeploymentEditForm({
+                    ...deploymentEditForm,
+                    versionName: event.target.value,
+                  })
+                }
+                maxLength={80}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              변경 요약 <small>(선택)</small>
+              <textarea
+                value={deploymentEditForm.changeSummary}
+                onChange={(event) =>
+                  setDeploymentEditForm({
+                    ...deploymentEditForm,
+                    changeSummary: event.target.value,
+                  })
+                }
+                maxLength={500}
+                rows={3}
+              />
+            </label>
+            {deploymentsError && (
+              <div className="deployment-modal__error">{deploymentsError}</div>
+            )}
+            <footer>
+              <button
+                type="button"
+                className="cancel"
+                onClick={() => setIsDeploymentEditModalOpen(false)}
+              >
+                취소
+              </button>
+              <button type="submit" className="save" disabled={isUpdatingDeployment}>
+                {isUpdatingDeployment ? "저장 중…" : "버전 정보 저장"}
               </button>
             </footer>
           </form>
