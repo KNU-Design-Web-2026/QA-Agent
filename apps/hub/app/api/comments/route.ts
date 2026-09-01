@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
+import { shouldRetryWithoutReviewDeployment } from "@/lib/review-deployment-compat";
 
 const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]), reviewerIds: z.array(z.string().uuid()).max(10).default([]) });
 const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional(), reviewDeploymentId: z.string().uuid().optional() });
@@ -53,22 +54,45 @@ export async function GET(request: Request) {
     const commentId = searchParams.get("commentId");
     if (!projectSlug || !deploymentUrl) throw new Error("프로젝트와 배포본 정보가 필요합니다.");
     const { supabase, project, deployment } = await findProjectAndDeployment(projectSlug, deploymentUrl);
-    let query = supabase
-      .from("qa_comments")
-      .select("id, body, type, priority, status, pathname, query_string, viewport_width, viewport_height, device_scale_factor, zoom, scroll_x, scroll_y, element_qa_id, element_rect_json, normalized_anchor_json, created_at, updated_at, author_id, deployment_id, review_deployment_id")
-      .eq("project_id", project.id)
-      .is("archived_at", null)
-      .order("created_at", { ascending: false });
-    if (scope === "review") {
-      if (!commentId) throw new Error("확인할 의견 정보가 필요합니다.");
-      query = query.eq("id", commentId);
-    } else {
-      query = query.eq("deployment_id", deployment.id);
-      if (scope === "authored") query = query.eq("author_id", session.userId);
-      else if (scope !== "all") query = query.eq("pathname", pathname);
-    }
-    const { data: rows, error } = await query;
-    if (error) throw new Error("코멘트 목록을 불러오지 못했습니다.");
+    const commentFields = "id, body, type, priority, status, pathname, query_string, viewport_width, viewport_height, device_scale_factor, zoom, scroll_x, scroll_y, element_qa_id, element_rect_json, normalized_anchor_json, created_at, updated_at, author_id, deployment_id, review_deployment_id";
+    const legacyCommentFields = "id, body, type, priority, status, pathname, query_string, viewport_width, viewport_height, device_scale_factor, zoom, scroll_x, scroll_y, element_qa_id, element_rect_json, normalized_anchor_json, created_at, updated_at, author_id, deployment_id";
+    const buildCommentQuery = (fields: string) => {
+      let query = supabase
+        .from("qa_comments")
+        .select(fields)
+        .eq("project_id", project.id)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false });
+      if (scope === "review") {
+        if (!commentId) throw new Error("확인할 의견 정보가 필요합니다.");
+        query = query.eq("id", commentId);
+      } else {
+        query = query.eq("deployment_id", deployment.id);
+        if (scope === "authored") query = query.eq("author_id", session.userId);
+        else if (scope !== "all") query = query.eq("pathname", pathname);
+      }
+      return query;
+    };
+    const primaryResult = await buildCommentQuery(commentFields);
+    const fallbackResult = shouldRetryWithoutReviewDeployment(primaryResult.error)
+      ? await buildCommentQuery(legacyCommentFields)
+      : null;
+    const result = fallbackResult ?? primaryResult;
+    if (result.error) throw new Error("코멘트 목록을 불러오지 못했습니다.");
+    const rawRows = (result.data ?? []) as unknown as Array<
+      Record<string, unknown> & {
+        id: string;
+        author_id: string;
+        review_deployment_id?: string | null;
+      }
+    >;
+    const rows = rawRows.map((row) => ({
+      ...row,
+      review_deployment_id:
+        typeof row.review_deployment_id === "string"
+          ? row.review_deployment_id
+          : null,
+    }));
     const commentIds = (rows ?? []).map((row) => row.id);
     const [{ data: annotations }, { data: events }, { data: reviewRecipients }] = await Promise.all([
       commentIds.length ? supabase.from("annotations").select("id, qa_comment_id, kind, geometry_json, style_json, z_index").in("qa_comment_id", commentIds).order("z_index") : Promise.resolve({ data: [] }),
