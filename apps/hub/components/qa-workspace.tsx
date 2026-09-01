@@ -30,6 +30,7 @@ import {
   getViewerDeploymentOptionLabel,
 } from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
+import { isQaRouteReady, readQaRouteState } from "@/lib/qa-route-bridge";
 import { getReviewScreen } from "@/lib/review-screen";
 
 const viewports = [
@@ -293,6 +294,7 @@ export function QaWorkspace({
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const draftRef = useRef<Draft | null>(null);
   const previousActiveDeploymentIdRef = useRef<string | null | undefined>(
     undefined,
@@ -342,6 +344,42 @@ export function QaWorkspace({
     Boolean(activeDeployment) &&
     Boolean(selectedDeployment) &&
     isPastDeployment;
+
+  useEffect(() => {
+    const deploymentOrigin = new URL(actualUrl).origin;
+    const subscribe = () => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "knud.qa/subscribe-route", version: 1 },
+        deploymentOrigin,
+      );
+    };
+    const handleRouteState = (event: MessageEvent<unknown>) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      if (isQaRouteReady(event.data, event.origin, deploymentOrigin)) {
+        subscribe();
+        return;
+      }
+      const pathname = readQaRouteState(
+        event.data,
+        event.origin,
+        deploymentOrigin,
+      );
+      if (pathname) setRoute((current) => (current === pathname ? current : pathname));
+    };
+
+    window.addEventListener("message", handleRouteState);
+    return () => window.removeEventListener("message", handleRouteState);
+  }, [actualUrl]);
+
+  const subscribeToIframeRoute = () => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+
+    iframe.contentWindow.postMessage(
+      { type: "knud.qa/subscribe-route", version: 1 },
+      new URL(actualUrl).origin,
+    );
+  };
 
   const openOriginalSize = () =>
     window.open(
@@ -1581,8 +1619,10 @@ export function QaWorkspace({
                     }}
                   >
                     <iframe
+                      ref={iframeRef}
                       title="KNUD production deployment"
                       src={`${actualUrl}${route}`}
+                      onLoad={subscribeToIframeRoute}
                       scrolling="yes"
                       sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts"
                     />
