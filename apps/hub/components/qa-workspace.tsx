@@ -25,6 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQaAccessSession } from "@/components/auth-gate";
+import { getCommentNavigation } from "@/lib/comment-navigation";
 import {
   getDeploymentLabel,
   getViewerDeploymentOptionLabel,
@@ -978,14 +979,17 @@ export function QaWorkspace({
   }
 
   const openComment = (comment: QaComment) => {
+    const navigation = getCommentNavigation(
+      comment,
+      viewports.map((viewport) => viewport.width),
+    );
     if (comment.deployment_id !== selectedDeploymentId) {
       selectDeploymentForViewing(comment.deployment_id);
     }
-    setRoute(comment.pathname);
-    const viewportIndex = viewports.findIndex(
-      (viewport) => viewport.width === comment.viewport_width,
-    );
-    if (viewportIndex !== -1) setSelectedViewport(viewportIndex);
+    setRoute(navigation.pathname);
+    if (navigation.viewportIndex !== -1) {
+      setSelectedViewport(navigation.viewportIndex);
+    }
     setSelectedCommentId(comment.id);
     setIsEditingComment(false);
   };
@@ -1518,7 +1522,7 @@ export function QaWorkspace({
                 key={comment.id}
                 comment={comment}
                 selected={selectedComment?.id === comment.id}
-                onClick={() => setSelectedCommentId(comment.id)}
+                onClick={() => openComment(comment)}
               />
             ))}
             {!isLoadingComments && !displayComments.length && (
