@@ -37,6 +37,7 @@ import {
   getCommentAnchorPosition,
 } from "@/lib/comment-anchor";
 import { getReviewScreen } from "@/lib/review-screen";
+import { getVisibleVersionComments } from "@/lib/version-comments";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -348,6 +349,7 @@ export function QaWorkspace({
     reviewContextComment?.review_deployment_id ?? null,
     selectedDeploymentId,
   );
+  const versionComments = getVisibleVersionComments(allComments);
   const shouldShowVersionUpdate =
     accessSession?.role !== "admin" &&
     Boolean(activeDeployment) &&
@@ -705,6 +707,9 @@ export function QaWorkspace({
   useEffect(() => {
     void loadAuthoredComments();
   }, [loadAuthoredComments]);
+  useEffect(() => {
+    void loadAllComments();
+  }, [loadAllComments]);
   useEffect(() => {
     void loadNotifications();
     const timer = window.setInterval(() => void loadNotifications(), 30_000);
@@ -1588,6 +1593,26 @@ export function QaWorkspace({
             {!isLoadingComments && !displayComments.length && (
               <p className="empty-comments">
                 이 경로에는 아직 코멘트가 없습니다.
+              </p>
+            )}
+          </div>
+          <div className="panel-rule" />
+          <SectionTitle
+            label="이 버전의 코멘트"
+            count={String(versionComments.length)}
+          />
+          <div className="comment-list comment-list--version" data-tutorial="qa-version-comments">
+            {versionComments.map((comment) => (
+              <CommentListItem
+                key={comment.id}
+                comment={comment}
+                selected={selectedComment?.id === comment.id}
+                onClick={() => openComment(comment)}
+              />
+            ))}
+            {!versionComments.length && (
+              <p className="empty-comments">
+                이 버전에는 아직 코멘트가 없습니다.
               </p>
             )}
           </div>
