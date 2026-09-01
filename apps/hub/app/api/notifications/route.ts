@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
+import { getUnreadVisibleNotificationCount } from "@/lib/notification-count";
 
 const updateSchema = z.object({ action: z.enum(["read", "read_all"]), notificationId: z.string().uuid().optional() });
 
@@ -50,13 +51,13 @@ export async function GET() {
     const reviewDeploymentById = new Map(
       (reviewDeployments ?? []).map((deployment) => [deployment.id, deployment]),
     );
-    const items = (notifications ?? [])
+    const mappedItems = (notifications ?? [])
       .map((notification) => {
         const comment = commentById.get(notification.qa_comment_id);
         return comment ? { ...notification, comment: { ...comment, author: authorById.get(comment.author_id) ?? null }, reviewDeployment: comment.review_deployment_id ? reviewDeploymentById.get(comment.review_deployment_id) ?? null : null } : null;
-      })
-      .filter(Boolean);
-    return NextResponse.json({ notifications: items, unreadCount: (notifications ?? []).filter((notification) => !notification.read_at).length });
+      });
+    const items = mappedItems.filter(Boolean);
+    return NextResponse.json({ notifications: items, unreadCount: getUnreadVisibleNotificationCount(mappedItems) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "알림을 불러오지 못했습니다." }, { status: 400 });
   }
