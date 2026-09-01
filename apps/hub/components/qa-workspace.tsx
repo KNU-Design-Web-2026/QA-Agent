@@ -978,6 +978,33 @@ export function QaWorkspace({
     }
   }
 
+  async function deleteComment() {
+    if (!selectedComment) return;
+    setIsTransitioning(true);
+    setEditError(null);
+    try {
+      const response = await fetch("/api/comments", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete", commentId: selectedComment.id }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error ?? "코멘트를 삭제하지 못했습니다.");
+      setSelectedCommentId(null);
+      setIsEditingComment(false);
+      await loadComments();
+      await loadAuthoredComments();
+      if (isQaListOpen) await loadAllComments();
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : "코멘트를 삭제하지 못했습니다.",
+      );
+    } finally {
+      setIsTransitioning(false);
+    }
+  }
+
   const openComment = (comment: QaComment) => {
     const navigation = getCommentNavigation(
       comment,
@@ -1803,6 +1830,7 @@ export function QaWorkspace({
               setEditError(null);
             }}
             onSaveEdit={() => void saveEditedComment()}
+            onDelete={() => void deleteComment()}
             onEditedBodyChange={setEditedBody}
             onEditedPriorityChange={setEditedPriority}
             canRequestReview={
@@ -2743,6 +2771,7 @@ function CommentInspector({
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
+  onDelete,
   onEditedBodyChange,
   onEditedPriorityChange,
   canRequestReview,
@@ -2768,6 +2797,7 @@ function CommentInspector({
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaveEdit: () => void;
+  onDelete: () => void;
   onEditedBodyChange: (value: string) => void;
   onEditedPriorityChange: (value: QaComment["priority"]) => void;
   canRequestReview: boolean;
@@ -2783,10 +2813,12 @@ function CommentInspector({
 }) {
   const [isReopenFormOpen, setIsReopenFormOpen] = useState(false);
   const [reopenNote, setReopenNote] = useState("");
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     setIsReopenFormOpen(false);
     setReopenNote("");
+    setIsDeleteConfirmOpen(false);
   }, [comment?.id, comment?.status]);
   if (isLoading)
     return <div className="inspector-empty">코멘트를 불러오는 중…</div>;
@@ -2883,13 +2915,32 @@ function CommentInspector({
           <p>{comment.body}</p>
         )}
         {canEdit && !isEditing && (
-          <button
-            className="comment-edit-button"
-            type="button"
-            onClick={onStartEdit}
-          >
-            <PencilSimple /> 내 의견 수정
-          </button>
+          <div className="comment-owner-actions">
+            <button
+              className="comment-edit-button"
+              type="button"
+              onClick={onStartEdit}
+            >
+              <PencilSimple /> 내 의견 수정
+            </button>
+            {!isDeleteConfirmOpen ? (
+              <button
+                className="comment-delete-button"
+                type="button"
+                onClick={() => setIsDeleteConfirmOpen(true)}
+              >
+                삭제
+              </button>
+            ) : (
+              <span className="comment-delete-confirm">
+                <b>삭제할까요?</b>
+                <button type="button" onClick={() => setIsDeleteConfirmOpen(false)} disabled={isTransitioning}>취소</button>
+                <button className="delete" type="button" onClick={onDelete} disabled={isTransitioning}>
+                  {isTransitioning ? "삭제 중…" : "삭제하기"}
+                </button>
+              </span>
+            )}
+          </div>
         )}
       </section>
       <section className="reproduction">

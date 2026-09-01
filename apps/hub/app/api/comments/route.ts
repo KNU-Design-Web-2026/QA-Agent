@@ -2,11 +2,13 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
+import { canDeleteComment } from "@/lib/comment-deletion";
 import { shouldRetryWithoutReviewDeployment } from "@/lib/review-deployment-compat";
 
 const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]), reviewerIds: z.array(z.string().uuid()).max(10).default([]) });
 const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional(), reviewDeploymentId: z.string().uuid().optional() });
 const editSchema = z.object({ action: z.literal("edit"), commentId: z.string().uuid(), body: z.string().trim().min(1).max(5000), priority: z.enum(["low", "medium", "high", "blocker"]) });
+const deleteSchema = z.object({ action: z.literal("delete"), commentId: z.string().uuid() });
 
 async function requireSession() {
   const session = readAccessToken((await cookies()).get(QA_ACCESS_COOKIE)?.value);
@@ -199,6 +201,31 @@ export async function PATCH(request: Request) {
         },
       });
       return NextResponse.json({ comment });
+    }
+    const deleteInput = deleteSchema.safeParse(payload);
+    if (deleteInput.success) {
+      const input = deleteInput.data;
+      const { data: current, error: currentError } = await supabase
+        .from("qa_comments")
+        .select("id, author_id")
+        .eq("id", input.commentId)
+        .is("archived_at", null)
+        .single();
+      if (currentError || !current) throw new Error("코멘트를 찾을 수 없습니다.");
+      if (!canDeleteComment(current.author_id, session.userId))
+        return NextResponse.json({ error: "작성한 코멘트만 삭제할 수 있습니다." }, { status: 403 });
+      const { error: archiveError } = await supabase
+        .from("qa_comments")
+        .update({ archived_at: new Date().toISOString() })
+        .eq("id", input.commentId);
+      if (archiveError) throw new Error("코멘트를 삭제하지 못했습니다.");
+      await supabase.from("qa_events").insert({
+        qa_comment_id: input.commentId,
+        actor_id: session.userId,
+        kind: "deleted",
+        payload_json: {},
+      });
+      return NextResponse.json({ id: input.commentId });
     }
     const input = transitionSchema.parse(payload);
     const { data: currentComment, error: currentCommentError } = await supabase
