@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "KNUD Design QA Hub",
   description: "Reproducible visual QA for KNUD deployments",
   icons: {
-    icon: "/icon.svg",
+    icon: "/favicon.png",
   },
 };
 
