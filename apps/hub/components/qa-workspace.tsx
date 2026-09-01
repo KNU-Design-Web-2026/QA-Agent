@@ -32,6 +32,10 @@ import {
 } from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
 import { isQaRouteReady, readQaRouteState } from "@/lib/qa-route-bridge";
+import {
+  getCommentAnchorGeometry,
+  getCommentAnchorPosition,
+} from "@/lib/comment-anchor";
 import { getReviewScreen } from "@/lib/review-screen";
 
 const viewports = [
@@ -294,9 +298,13 @@ export function QaWorkspace({
   const [previewZoom, setPreviewZoom] = useState(0.67);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
+  const [iframeScroll, setIframeScroll] = useState<Point>({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const draftRef = useRef<Draft | null>(null);
+  const pendingIframeScrollRef = useRef<(Point & { pathname: string }) | null>(
+    null,
+  );
   const previousActiveDeploymentIdRef = useRef<string | null | undefined>(
     undefined,
   );
@@ -360,12 +368,30 @@ export function QaWorkspace({
         subscribe();
         return;
       }
-      const pathname = readQaRouteState(
+      const routeState = readQaRouteState(
         event.data,
         event.origin,
         deploymentOrigin,
       );
-      if (pathname) setRoute((current) => (current === pathname ? current : pathname));
+      if (!routeState) return;
+      setRoute((current) =>
+        current === routeState.pathname ? current : routeState.pathname,
+      );
+      setIframeScroll({ x: routeState.scrollX, y: routeState.scrollY });
+
+      const pending = pendingIframeScrollRef.current;
+      if (pending?.pathname === routeState.pathname) {
+        iframeRef.current?.contentWindow?.postMessage(
+          {
+            type: "knud.qa/scroll-to",
+            version: 1,
+            scrollX: pending.x,
+            scrollY: pending.y,
+          },
+          deploymentOrigin,
+        );
+        pendingIframeScrollRef.current = null;
+      }
     };
 
     window.addEventListener("message", handleRouteState);
@@ -780,6 +806,8 @@ export function QaWorkspace({
           viewportWidth: currentViewport.width,
           viewportHeight: currentViewport.height,
           deviceScaleFactor: window.devicePixelRatio,
+          scrollX: iframeScroll.x,
+          scrollY: iframeScroll.y,
           zoom,
           kind: draft.kind,
           anchor: normalizedAnchor,
@@ -1014,6 +1042,11 @@ export function QaWorkspace({
       selectDeploymentForViewing(comment.deployment_id);
     }
     setRoute(navigation.pathname);
+    pendingIframeScrollRef.current = {
+      pathname: navigation.pathname,
+      x: comment.scroll_x,
+      y: comment.scroll_y,
+    };
     if (navigation.viewportIndex !== -1) {
       setSelectedViewport(navigation.viewportIndex);
     }
@@ -1594,7 +1627,7 @@ export function QaWorkspace({
                   태블릿 · 주 검수 화면
                 </span>
                 <span>
-                  <code>{scaleLabel}</code> · scrollY 0
+                  <code>{scaleLabel}</code> · scrollY {Math.round(iframeScroll.y)}
                 </span>
               </header>
               <div className="live-frame" data-tutorial="qa-preview">
@@ -1686,6 +1719,7 @@ export function QaWorkspace({
                       comment={hoveredMarker.comment}
                       zoom={zoom}
                       viewport={currentViewport}
+                      currentScroll={iframeScroll}
                     />
                   )}
                   {markersVisible &&
@@ -1696,6 +1730,7 @@ export function QaWorkspace({
                         number={index + 1}
                         zoom={zoom}
                         viewport={currentViewport}
+                        currentScroll={iframeScroll}
                         onClick={() => setSelectedCommentId(comment.id)}
                         onHover={(point) =>
                           setHoveredMarker({ comment, ...point })
@@ -1953,20 +1988,22 @@ function getAreaGeometry(
   comment: QaComment,
   viewport: { width: number; height: number },
   zoom: number,
+  currentScroll: Point,
 ) {
   const annotation = comment.annotations.find((item) => item.kind === "rect");
   if (!annotation) return null;
-  const geometry = annotation.geometry_json;
-  const x = typeof geometry.x === "number" ? geometry.x : 0;
-  const y = typeof geometry.y === "number" ? geometry.y : 0;
-  const width = typeof geometry.width === "number" ? geometry.width : 0;
-  const height = typeof geometry.height === "number" ? geometry.height : 0;
-  if (width <= 0 || height <= 0) return null;
+  const geometry = getCommentAnchorGeometry({
+    anchor: annotation.geometry_json,
+    viewport,
+    savedScroll: { x: comment.scroll_x, y: comment.scroll_y },
+    currentScroll,
+  });
+  if (!geometry) return null;
   return {
-    x: x * viewport.width * zoom,
-    y: y * viewport.height * zoom,
-    width: width * viewport.width * zoom,
-    height: height * viewport.height * zoom,
+    x: geometry.x * zoom,
+    y: geometry.y * zoom,
+    width: geometry.width * zoom,
+    height: geometry.height * zoom,
   };
 }
 
@@ -2502,6 +2539,7 @@ function SavedAnnotation({
   number,
   zoom,
   viewport,
+  currentScroll,
   onClick,
   onHover,
   onLeave,
@@ -2510,21 +2548,35 @@ function SavedAnnotation({
   number: number;
   zoom: number;
   viewport: { width: number; height: number };
+  currentScroll: Point;
   onClick: () => void;
   onHover: (point: Omit<MarkerPreview, "comment">) => void;
   onLeave: () => void;
 }) {
   const anchor = comment.normalized_anchor_json;
-  const x = typeof anchor.x === "number" ? anchor.x : 0;
-  const y = typeof anchor.y === "number" ? anchor.y : 0;
+  const position = getCommentAnchorPosition({
+    anchor,
+    viewport,
+    savedScroll: { x: comment.scroll_x, y: comment.scroll_y },
+    currentScroll,
+  });
   const authorName = commentAuthorName(comment.author);
-  const markerX = x * viewport.width * zoom;
-  const markerY = y * viewport.height * zoom;
-  const area = getAreaGeometry(comment, viewport, zoom);
+  const markerX = position.x * zoom;
+  const markerY = position.y * zoom;
+  const area = getAreaGeometry(comment, viewport, zoom, currentScroll);
   const tooltipWidth = 300;
   const tooltipHeight = 104;
   const viewportWidth = viewport.width * zoom;
   const viewportHeight = viewport.height * zoom;
+
+  if (
+    markerX < -32 ||
+    markerY < -32 ||
+    markerX > viewportWidth + 32 ||
+    markerY > viewportHeight + 32
+  ) {
+    return null;
+  }
 
   const tooltipPoint = () => {
     if (area) {
@@ -2584,12 +2636,14 @@ function SavedAreaPreview({
   comment,
   zoom,
   viewport,
+  currentScroll,
 }: {
   comment: QaComment;
   zoom: number;
   viewport: { width: number; height: number };
+  currentScroll: Point;
 }) {
-  const area = getAreaGeometry(comment, viewport, zoom);
+  const area = getAreaGeometry(comment, viewport, zoom, currentScroll);
   if (!area) return null;
   return (
     <div

@@ -13,7 +13,23 @@ describe("readQaRouteState", () => {
         "https://knud-2026-exhibition.vercel.app",
         "https://knud-2026-exhibition.vercel.app",
       ),
-    ).toBe("/profile");
+    ).toEqual({ pathname: "/profile", scrollX: 0, scrollY: 0 });
+  });
+
+  it("preserves the embedded page scroll position when it is supplied", () => {
+    expect(
+      readQaRouteState(
+        {
+          type: "knud.qa/route-state",
+          version: 1,
+          pathname: "/profile",
+          scrollX: 24,
+          scrollY: 860,
+        },
+        "https://knud-2026-exhibition.vercel.app",
+        "https://knud-2026-exhibition.vercel.app",
+      ),
+    ).toEqual({ pathname: "/profile", scrollX: 24, scrollY: 860 });
   });
 
   it("rejects a route event from another origin or an unsafe path", () => {

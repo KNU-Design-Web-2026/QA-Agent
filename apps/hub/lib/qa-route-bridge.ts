@@ -5,6 +5,8 @@ type QaRouteStateMessage = {
   type: typeof QA_ROUTE_STATE_EVENT;
   version: 1;
   pathname: string;
+  scrollX?: number;
+  scrollY?: number;
 };
 
 type QaRouteReadyMessage = {
@@ -42,5 +44,18 @@ export function readQaRouteState(
     return null;
   }
 
-  return candidate.pathname;
+  const scrollX =
+    typeof candidate.scrollX === "number" &&
+    Number.isFinite(candidate.scrollX) &&
+    candidate.scrollX >= 0
+      ? candidate.scrollX
+      : 0;
+  const scrollY =
+    typeof candidate.scrollY === "number" &&
+    Number.isFinite(candidate.scrollY) &&
+    candidate.scrollY >= 0
+      ? candidate.scrollY
+      : 0;
+
+  return { pathname: candidate.pathname, scrollX, scrollY };
 }
