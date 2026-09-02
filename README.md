@@ -48,7 +48,18 @@ pnpm dev
 
 Render는 저장소 루트의 [`render.yaml`](./render.yaml)을 Blueprint로 연결해 배포한다. 기존에 만든 Render **Web Service**는 삭제하고, `knud-qa-capture-worker`라는 새 **Background Worker**를 생성한다. `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`는 Render의 Environment에만 등록한다. service role key는 브라우저/Vercel의 public 환경변수에 넣지 않는다.
 
-Vercel에는 `apps/hub/.env.example`의 `NEXT_PUBLIC_*` 값만 넣는다. Render에는 `packages/qa-capture-worker/.env.example`의 server-only 값만 넣는다. 값이 누락된 Worker는 의도적으로 즉시 종료해 잘못된 배포를 방지한다.
+Vercel에는 `apps/hub/.env.example`의 공개 설정과 QA Hub 서버 설정을 함께 넣는다. 메일 알림을 사용하려면 `RESEND_API_KEY`, `QA_NOTIFICATION_FROM`, `QA_ADMIN_EMAIL`을 Vercel의 server-only 환경 변수로 등록한다. `RESEND_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 붙이지 않는다. Render에는 `packages/qa-capture-worker/.env.example`의 server-only 값만 넣는다. 값이 누락된 Worker는 의도적으로 즉시 종료해 잘못된 배포를 방지한다.
+
+### 코멘트 메일 알림
+
+디자이너가 코멘트를 저장하면 QA Hub가 기존 인앱 알림과 함께 관리자 메일(`QA_ADMIN_EMAIL`)을 발송한다. 메일 발송에 실패해도 코멘트 저장은 성공하며, 실패 내용은 서버 로그에 기록된다. Resend에서 발신 도메인을 인증한 뒤 다음 값을 Vercel Production 환경에 등록한다.
+
+```env
+RESEND_API_KEY=re_...
+QA_NOTIFICATION_FROM=KNUD QA Hub <qa@인증한-도메인>
+QA_ADMIN_EMAIL=lee980605@knu.ac.kr
+NEXT_PUBLIC_APP_URL=https://qa-agent-hub-rust.vercel.app
+```
 
 Supabase에는 다음 순서로 SQL을 적용한다.
 
