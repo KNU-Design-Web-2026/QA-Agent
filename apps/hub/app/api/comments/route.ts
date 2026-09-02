@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createAdminClient, QA_ACCESS_COOKIE, readAccessToken } from "@/lib/qa-access";
 import { canDeleteComment } from "@/lib/comment-deletion";
 import { shouldRetryWithoutReviewDeployment } from "@/lib/review-deployment-compat";
+import { sendConfiguredCommentCreatedEmail } from "@/lib/comment-email";
 
 const inputSchema = z.object({ projectSlug: z.string(), deploymentUrl: z.string().url(), body: z.string().min(1), pathname: z.string(), viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(), zoom: z.number().positive(), deviceScaleFactor: z.number().positive(), scrollX: z.number().finite().min(0).default(0), scrollY: z.number().finite().min(0).default(0), kind: z.enum(["pin", "area"]), anchor: z.record(z.string(), z.unknown()), type: z.enum(["visual", "interaction", "content", "design_reference"]), priority: z.enum(["low", "medium", "high", "blocker"]), reviewerIds: z.array(z.string().uuid()).max(10).default([]) });
 const transitionSchema = z.object({ commentId: z.string().uuid(), nextStatus: z.enum(["open", "in_progress", "review_requested", "done"]), note: z.string().max(500).optional(), reviewDeploymentId: z.string().uuid().optional() });
@@ -163,6 +164,27 @@ export async function POST(request: Request) {
       if (recipientsError) throw new Error("검토 요청 대상을 저장하지 못했습니다.");
     }
     await notifyAdmins(supabase, project.organization_id, comment.id, "comment_created", session.userId);
+    try {
+      const { data: author } = await supabase
+        .from("profiles")
+        .select("display_name, email")
+        .eq("id", session.userId)
+        .maybeSingle();
+      const emailResult = await sendConfiguredCommentCreatedEmail({
+        hubUrl: process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin,
+        authorName: author?.display_name ?? author?.email ?? "디자이너",
+        body: input.body,
+        pathname: input.pathname,
+        viewportWidth: input.viewportWidth,
+        viewportHeight: input.viewportHeight,
+        priority: input.priority,
+        commentId: comment.id,
+      });
+      if (!emailResult.ok && emailResult.error !== "메일 환경 변수가 설정되지 않았습니다.")
+        console.error("[qa-email] 코멘트 알림 메일 발송 실패", emailResult.error);
+    } catch (emailError) {
+      console.error("[qa-email] 코멘트 알림 메일 처리 실패", emailError);
+    }
     return NextResponse.json({ id: comment.id });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "코멘트를 저장하지 못했습니다." }, { status: 400 }); }
 }
