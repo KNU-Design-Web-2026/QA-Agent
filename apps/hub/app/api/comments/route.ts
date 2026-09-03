@@ -153,8 +153,35 @@ export async function POST(request: Request) {
       if ((reviewers ?? []).length !== input.reviewerIds.length)
         throw new Error("검토 요청 대상에 등록되지 않은 디자이너가 있습니다.");
     }
-    const { data: comment, error: commentError } = await supabase.from("qa_comments").insert({ project_id: project.id, deployment_id: deployment.id, author_id: session.userId, body: input.body, type: input.type, priority: input.priority, pathname: input.pathname, query_string: "", viewport_width: input.viewportWidth, viewport_height: input.viewportHeight, device_scale_factor: input.deviceScaleFactor, zoom: input.zoom, scroll_x: input.scrollX, scroll_y: input.scrollY, element_qa_id: null, selector_hint_json: {}, normalized_anchor_json: input.anchor }).select("id").single();
-    if (commentError || !comment) throw new Error("코멘트를 저장하지 못했습니다.");
+    const { data: comment, error: commentError } = await supabase.from("qa_comments").insert({
+      project_id: project.id,
+      deployment_id: deployment.id,
+      author_id: session.userId,
+      body: input.body,
+      type: input.type,
+      priority: input.priority,
+      pathname: input.pathname,
+      query_string: "",
+      viewport_width: input.viewportWidth,
+      viewport_height: input.viewportHeight,
+      device_scale_factor: input.deviceScaleFactor,
+      zoom: input.zoom,
+      // Browser scroll offsets can be fractional; PostgreSQL columns are integers.
+      scroll_x: Math.round(input.scrollX),
+      scroll_y: Math.round(input.scrollY),
+      element_qa_id: null,
+      selector_hint_json: {},
+      normalized_anchor_json: input.anchor,
+    }).select("id").single();
+    if (commentError || !comment) {
+      // DB messages/details can contain private row data; log only safe diagnostics.
+      console.error("[qa-comments] 코멘트 저장 실패", {
+        code: commentError?.code ?? "NO_ROW",
+        scrollX: input.scrollX,
+        scrollY: input.scrollY,
+      });
+      throw new Error("코멘트를 저장하지 못했습니다.");
+    }
     const { error: annotationError } = await supabase.from("annotations").insert({ qa_comment_id: comment.id, kind: input.kind === "area" ? "rect" : "pin", geometry_json: input.anchor, style_json: { color: "yellow" } });
     if (annotationError) throw new Error("코멘트 위치를 저장하지 못했습니다.");
     if (input.reviewerIds.length) {
