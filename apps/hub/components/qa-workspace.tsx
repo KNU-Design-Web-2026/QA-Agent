@@ -1720,7 +1720,7 @@ export function QaWorkspace({
           </div>
           <div className="panel-rule" />
           <SectionTitle label="현재 페이지" count={String(displayComments.length)} />
-          <div className="comment-list" data-tutorial="qa-comment-list">
+          <div className="comment-list" data-tutorial="qa-comment-list" role="region" aria-label="현재 페이지 코멘트 목록" tabIndex={0}>
             {isLoadingComments ? <CommentListSkeleton /> : displayComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
@@ -1740,7 +1740,7 @@ export function QaWorkspace({
             label="이 버전의 코멘트"
             count={String(versionComments.length)}
           />
-          <div className="comment-list comment-list--version" data-tutorial="qa-version-comments">
+          <div className="comment-list comment-list--version" data-tutorial="qa-version-comments" role="region" aria-label="이 버전의 코멘트 목록" tabIndex={0}>
             {isLoadingAllComments ? <CommentListSkeleton /> : versionComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
@@ -1760,7 +1760,7 @@ export function QaWorkspace({
             label="내 코멘트"
             count={String(authoredComments.length)}
           />
-          <div className="comment-list" data-tutorial="qa-my-comments">
+          <div className="comment-list" data-tutorial="qa-my-comments" role="region" aria-label="내 코멘트 목록" tabIndex={0}>
             {isLoadingAuthoredComments ? <CommentListSkeleton rows={2} /> : authoredComments.map((comment) => (
               <CommentListItem
                 key={comment.id}

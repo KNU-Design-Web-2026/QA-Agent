@@ -227,6 +227,19 @@
 
 /* Compact, content-led QA lists: the author and the actionable feedback are primary. */
 .comment-list { padding: 3px 6px; }
+/* Keep long lists inside their section; retain access to lower sections on short screens. */
+.left-panel { overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
+.left-panel > .comment-list {
+  min-height: 0;
+  max-height: 198px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c5c5bf transparent;
+}
+.left-panel > .comment-list:focus-visible { outline: 2px solid #b39200; outline-offset: -2px; }
 .tutorial-replay-button { height: 26px; padding: 0 8px; border: 1px solid #3b3b38; border-radius: 6px; background: transparent; color: #d7d7d2; font-size: 10.5px; font-weight: 700; }
 .tutorial-replay-button:hover { border-color: var(--yellow); color: var(--yellow); }
 .qa-list-button { height: 26px; padding: 0 9px; border: 1px solid #3b3b38; border-radius: 6px; background: transparent; color: #ededed; font-size: 10.5px; font-weight: 700; }
