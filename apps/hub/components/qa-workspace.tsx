@@ -31,6 +31,7 @@ import {
   getViewerDeploymentOptionLabel,
 } from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
+import { getInitialDeploymentSelection } from "@/lib/initial-deployment-selection";
 import { isQaRouteReady, readQaRouteState } from "@/lib/qa-route-bridge";
 import {
   getCommentAnchorGeometry,
@@ -478,8 +479,17 @@ export function QaWorkspace({
       previousActiveDeploymentIdRef.current = nextActiveDeploymentId;
 
       if (accessSession?.role === "admin") {
+        const requestedDeploymentId = new URLSearchParams(
+          window.location.search,
+        ).get("deployment");
         setSelectedDeploymentId(
-          nextActiveDeploymentId ?? nextDeployments[0]?.id ?? null,
+          getInitialDeploymentSelection({
+            requestedDeploymentId,
+            activeDeploymentId: nextActiveDeploymentId,
+            availableDeploymentIds: nextDeployments.map(
+              (deployment: DeploymentInfo) => deployment.id,
+            ),
+          }),
         );
         if (
           previousActiveDeploymentId !== undefined &&
