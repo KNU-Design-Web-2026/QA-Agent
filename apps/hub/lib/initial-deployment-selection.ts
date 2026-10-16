@@ -22,3 +22,17 @@ export function getInitialDeploymentSelection({
 
   return availableDeploymentIds[0] ?? null;
 }
+
+export function getRefreshedDeploymentSelection({
+  currentDeploymentId,
+  activeDeploymentChanged,
+  ...input
+}: Omit<InitialDeploymentSelectionInput, "requestedDeploymentId"> & {
+  currentDeploymentId: string | null;
+  activeDeploymentChanged: boolean;
+}) {
+  return getInitialDeploymentSelection({
+    ...input,
+    requestedDeploymentId: activeDeploymentChanged ? null : currentDeploymentId,
+  });
+}

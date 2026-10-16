@@ -31,7 +31,7 @@ import {
   getViewerDeploymentOptionLabel,
 } from "@/lib/deployment-label";
 import { getDeploymentView } from "@/lib/deployment-view";
-import { getInitialDeploymentSelection } from "@/lib/initial-deployment-selection";
+import { getInitialDeploymentSelection, getRefreshedDeploymentSelection } from "@/lib/initial-deployment-selection";
 import { isQaRouteReady, readQaRouteState } from "@/lib/qa-route-bridge";
 import {
   getCommentAnchorGeometry,
@@ -482,14 +482,22 @@ export function QaWorkspace({
         const requestedDeploymentId = new URLSearchParams(
           window.location.search,
         ).get("deployment");
-        setSelectedDeploymentId(
-          getInitialDeploymentSelection({
+        const selectionInput = {
             requestedDeploymentId,
             activeDeploymentId: nextActiveDeploymentId,
             availableDeploymentIds: nextDeployments.map(
               (deployment: DeploymentInfo) => deployment.id,
             ),
-          }),
+        };
+        setSelectedDeploymentId((current) =>
+          previousActiveDeploymentId === undefined
+            ? getInitialDeploymentSelection(selectionInput)
+            : getRefreshedDeploymentSelection({
+                ...selectionInput,
+                currentDeploymentId: current,
+                activeDeploymentChanged:
+                  previousActiveDeploymentId !== nextActiveDeploymentId,
+              }),
         );
         if (
           previousActiveDeploymentId !== undefined &&
@@ -947,7 +955,7 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "QA 기준 버전을 변경하지 못했습니다.");
-      setSelectedDeploymentId(result.activeDeploymentId);
+      selectDeploymentForViewing(result.activeDeploymentId);
     } catch (error) {
       setIsSwitchingVersion(false);
       setIsLoadingComments(false);
