@@ -450,6 +450,10 @@
 .reopen-form button { height: 29px !important; padding: 0 9px !important; }
 @media (max-width: 720px) { .qa-history-content { width: min(100% - 28px, 1180px); padding-top: 38px; }.qa-history-title { align-items: flex-start; flex-direction: column; }.qa-history-filters { align-items: flex-start; flex-wrap: wrap; padding: 12px; }.qa-history-statuses { width: 100%; margin-left: 0; }.qa-history-item { min-height: 102px; padding: 15px 14px 15px 10px; grid-template-columns: 8px minmax(0, 1fr) max-content; grid-template-areas: "priority main chevron" ". version open"; row-gap: 10px; column-gap: 10px; }.qa-history-item__priority { grid-area: priority; align-self: start; margin-top: 5px; }.qa-history-item__main { grid-area: main; }.qa-history-item__main b { white-space: normal; }.qa-history-item__version { grid-area: version; justify-items: start; grid-auto-flow: column; justify-content: start; align-items: center; gap: 6px; }.qa-history-item__open { grid-area: open; align-self: center; }.qa-history-item > svg { grid-area: chevron; }.qa-history-header { padding: 0 14px; }.qa-history-header > span { display: none; }.qa-export-bar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }.qa-export-bar button { margin-left: 0; }.qa-history-row__check { width: 38px; }.qa-export-modal { padding: 18px; } }
 
+.comment-status-filter { flex-shrink: 0; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); color: #6b6b66; font-size: 11px; font-weight: 600; }
+.comment-status-filter select { min-width: 96px; height: 30px; padding: 0 8px; border: 1px solid #d6d6d1; border-radius: 6px; background: #fff; color: #111; font: inherit; }
+.comment-status-filter select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
 @media (max-width: 900px) {
   .login { min-height: 100dvh; height: auto; margin: 0; grid-template-columns: 1fr; }
   .login__brand { display: none; }

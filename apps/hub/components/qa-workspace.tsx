@@ -39,7 +39,7 @@ import {
 } from "@/lib/comment-anchor";
 import { getReviewScreen } from "@/lib/review-screen";
 import { shouldShowScreenLoading } from "@/lib/screen-loading";
-import { getVisibleVersionComments } from "@/lib/version-comments";
+import { getVisibleVersionComments, type CommentStatusFilter } from "@/lib/version-comments";
 
 const viewports = [
   { width: 1920, height: 1340 },
@@ -239,6 +239,7 @@ export function QaWorkspace({
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [comments, setComments] = useState<QaComment[]>([]);
   const [authoredComments, setAuthoredComments] = useState<QaComment[]>([]);
+  const [commentStatusFilter, setCommentStatusFilter] = useState<CommentStatusFilter>("unresolved");
   const [allComments, setAllComments] = useState<QaComment[]>([]);
   const [isQaListOpen, setIsQaListOpen] = useState(false);
   const [isLoadingAllComments, setIsLoadingAllComments] = useState(false);
@@ -343,10 +344,12 @@ export function QaWorkspace({
   const isPastDeployment = deploymentView === "past";
   const actualUrl = selectedDeployment?.immutable_url ?? fallbackDeploymentUrl;
   const isCommentMode = tool === "pin" || tool === "area" || commentOpen;
-  const displayComments =
+  const routeComments =
     reviewComment && !comments.some((comment) => comment.id === reviewComment.id)
       ? [reviewComment, ...comments]
       : comments;
+  const displayComments = getVisibleVersionComments(routeComments, commentStatusFilter);
+  const visibleAuthoredComments = getVisibleVersionComments(authoredComments, commentStatusFilter);
   const selectedComment =
     displayComments.find((comment) => comment.id === selectedCommentId) ??
     displayComments[0] ??
@@ -362,7 +365,7 @@ export function QaWorkspace({
     reviewContextComment?.review_deployment_id ?? null,
     selectedDeploymentId,
   );
-  const versionComments = getVisibleVersionComments(allComments);
+  const versionComments = getVisibleVersionComments(allComments, commentStatusFilter);
   const isScreenLoading = shouldShowScreenLoading(isSwitchingVersion);
   const shouldShowVersionUpdate =
     accessSession?.role !== "admin" &&
@@ -548,14 +551,12 @@ export function QaWorkspace({
       if (!response.ok)
         throw new Error(result.error ?? "코멘트 목록을 불러오지 못했습니다.");
       if (requestId !== commentsRequestIdRef.current) return;
-      const activeComments = (result.comments ?? []).filter(
-        (comment: QaComment) => comment.status !== "done",
-      );
-      setComments(activeComments);
+      const loadedComments = result.comments ?? [];
+      setComments(loadedComments);
       setSelectedCommentId((current) =>
-        activeComments.some((comment: QaComment) => comment.id === current)
+        loadedComments.some((comment: QaComment) => comment.id === current)
           ? current
-          : (activeComments[0]?.id ?? null),
+          : null,
       );
     } catch (error) {
       if (requestId !== commentsRequestIdRef.current) return;
@@ -590,11 +591,7 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "내 코멘트를 불러오지 못했습니다.");
-      setAuthoredComments(
-        (result.comments ?? []).filter(
-          (comment: QaComment) => comment.status !== "done",
-        ),
-      );
+      setAuthoredComments(result.comments ?? []);
     } catch {
       setAuthoredComments([]);
     } finally {
@@ -646,11 +643,7 @@ export function QaWorkspace({
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error ?? "QA 목록을 불러오지 못했습니다.");
-      setAllComments(
-        (result.comments ?? []).filter(
-          (comment: QaComment) => comment.status !== "done",
-        ),
-      );
+      setAllComments(result.comments ?? []);
     } catch {
       setAllComments([]);
     } finally {
@@ -885,7 +878,7 @@ export function QaWorkspace({
       await loadComments();
       await loadAuthoredComments();
       await loadNotifications();
-      if (isQaListOpen) await loadAllComments();
+      await loadAllComments();
       setSelectedCommentId(result.id);
     } catch (error) {
       setSaveError(
@@ -1054,7 +1047,8 @@ export function QaWorkspace({
       await loadComments();
       await loadAuthoredComments();
       await loadNotifications();
-      if (isQaListOpen) await loadAllComments();
+      await loadAllComments();
+      await loadReviewComment();
     } catch (error) {
       setCommentsError(
         error instanceof Error ? error.message : "상태를 변경하지 못했습니다.",
@@ -1094,7 +1088,7 @@ export function QaWorkspace({
       await loadComments();
       await loadAuthoredComments();
       await loadNotifications();
-      if (isQaListOpen) await loadAllComments();
+      await loadAllComments();
     } catch (error) {
       setEditError(
         error instanceof Error
@@ -1123,7 +1117,7 @@ export function QaWorkspace({
       setIsEditingComment(false);
       await loadComments();
       await loadAuthoredComments();
-      if (isQaListOpen) await loadAllComments();
+      await loadAllComments();
     } catch (error) {
       setEditError(
         error instanceof Error ? error.message : "코멘트를 삭제하지 못했습니다.",
@@ -1737,6 +1731,21 @@ export function QaWorkspace({
             ))}
           </div>
           <div className="panel-rule" />
+          <label className="comment-status-filter">
+            <span>피드백 보기</span>
+            <select
+              aria-label="좌측 피드백 상태 필터"
+              value={commentStatusFilter}
+              onChange={(event) => {
+                setCommentStatusFilter(event.target.value as CommentStatusFilter);
+                setHoveredMarker(null);
+              }}
+            >
+              <option value="unresolved">미완료</option>
+              <option value="all">전체</option>
+              <option value="done">완료</option>
+            </select>
+          </label>
           <SectionTitle label="현재 페이지" count={String(displayComments.length)} />
           <div className="comment-list" data-tutorial="qa-comment-list" role="region" aria-label="현재 페이지 코멘트 목록" tabIndex={0}>
             {isLoadingComments ? <CommentListSkeleton /> : displayComments.map((comment) => (
@@ -1749,7 +1758,7 @@ export function QaWorkspace({
             ))}
             {!isLoadingComments && !displayComments.length && (
               <p className="empty-comments">
-                이 경로에는 아직 코멘트가 없습니다.
+                현재 페이지에 선택한 상태의 코멘트가 없습니다.
               </p>
             )}
           </div>
@@ -1769,17 +1778,17 @@ export function QaWorkspace({
             ))}
             {!isLoadingAllComments && !versionComments.length && (
               <p className="empty-comments">
-                이 버전에는 아직 코멘트가 없습니다.
+                이 버전에 선택한 상태의 코멘트가 없습니다.
               </p>
             )}
           </div>
           <div className="panel-rule" />
           <SectionTitle
             label="내 코멘트"
-            count={String(authoredComments.length)}
+            count={String(visibleAuthoredComments.length)}
           />
           <div className="comment-list" data-tutorial="qa-my-comments" role="region" aria-label="내 코멘트 목록" tabIndex={0}>
-            {isLoadingAuthoredComments ? <CommentListSkeleton rows={2} /> : authoredComments.map((comment) => (
+            {isLoadingAuthoredComments ? <CommentListSkeleton rows={2} /> : visibleAuthoredComments.map((comment) => (
               <CommentListItem
                 key={comment.id}
                 comment={comment}
@@ -1787,9 +1796,9 @@ export function QaWorkspace({
                 onClick={() => openComment(comment)}
               />
             ))}
-            {!isLoadingAuthoredComments && !authoredComments.length && (
+            {!isLoadingAuthoredComments && !visibleAuthoredComments.length && (
               <p className="empty-comments">
-                이 버전에서 작성한 코멘트가 없습니다.
+                선택한 상태의 내 코멘트가 없습니다.
               </p>
             )}
           </div>
